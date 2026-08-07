@@ -3,8 +3,8 @@
 **A terminal-based ground station for MAVLink-speaking autonomous vehicles.**
 
 Connect to a real or simulated drone over UDP or serial, watch live telemetry, send
-commands, upload missions, and record flight logs — all from a single, keyboard-driven
-TUI. Think [QGroundControl](https://qgroundcontrol.com/) or Mission Planner, but stripped
+commands, upload missions, and record flight logs, all from a single, keyboard-driven
+TUI. Grabbing inspo from [QGroundControl](https://qgroundcontrol.com/) or Mission Planner, but stripped
 down, TUI-first, and hackable.
 
 <!-- Hero screenshot goes here once v0.5 lands:
@@ -14,11 +14,8 @@ down, TUI-first, and hackable.
 
 ## Why
 
-Ground stations like QGroundControl are powerful but heavy — full GUI apps you install and
-click through. `mavlink-gs` is the opposite: a fast, keyboard-driven cockpit that lives in
-your terminal, starts instantly, and is small enough to actually read and modify. It's
-built primarily as a portfolio artifact demonstrating Rust + async I/O + binary protocol
-parsing, and secondarily as a lightweight tool hobbyists and researchers can hack on.
+Ground stations like QGroundControl are powerful but heavy. `mavlink-gs` is the opposite, as it's a fast, keyboard-driven cockpit that lives in
+your terminal, starts instantly, and is small enough to still read and modify. 
 
 ## Planned features
 
