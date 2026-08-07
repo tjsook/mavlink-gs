@@ -5,11 +5,12 @@ Human-readable snapshot of what's shipped and what's next. Checked boxes are don
 ## v0.1 — It talks (Week 1)
 - [ ] Connects to PX4 SITL over UDP
 - [ ] Decodes `HEARTBEAT` / `GLOBAL_POSITION_INT` / `SYS_STATUS` / `ATTITUDE`
-- [ ] CLI-first, `println!` output
+- [ ] CLI-first, `std::cout` output
 - [ ] Graceful connect / disconnect
+- [ ] CI green (build + Catch2 + ASan + UBSan on Linux and macOS)
 
 ## v0.5 — It shows (Week 2)
-- [ ] `ratatui` TUI live-updating at ≥10 Hz
+- [ ] FTXUI TUI live-updating at ≥10 Hz
 - [ ] Configurable connection string (`--connect udp://127.0.0.1:14550`)
 - [ ] Connection status indicator
 
@@ -25,4 +26,4 @@ Human-readable snapshot of what's shipped and what's next. Checked boxes are don
 - [ ] Flight log recording (`.tlog` raw stream + parsed CSV)
 - [ ] One differentiator (pick: multi-vehicle / log playback / ASCII map)
 - [ ] Hero screenshot + demo video in README
-- [ ] Published to crates.io
+- [ ] Homebrew tap published, static Linux release binary in GitHub Releases
