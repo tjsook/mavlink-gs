@@ -1,0 +1,6 @@
+[submodule "external/vcpkg"]
+	path = external/vcpkg
+	url = https://github.com/microsoft/vcpkg.git
+[submodule "external/mavlink"]
+	path = external/mavlink
+	url = https://github.com/mavlink/c_library_v2.git
