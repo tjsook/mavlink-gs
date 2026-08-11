@@ -3,3 +3,15 @@ rustlings/
 
 # Personal planning doc — kept local, not published
 PROJECTPLAN.md
+
+# CMake build trees (presets put them under build/)
+build/
+cmake-build-*/
+
+# vcpkg manifest-mode install tree (rebuilt from vcpkg.json)
+vcpkg_installed/
+
+# Tooling / editor
+compile_commands.json
+.cache/
+.DS_Store
