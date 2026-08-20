@@ -1,0 +1,16 @@
+{
+  "name": "mavlink-gs",
+  "version-string": "0.1.0",
+  "description": "A terminal-based ground station for MAVLink-speaking autonomous vehicles.",
+  "homepage": "https://github.com/tjsook/mavlink-gs",
+  "license": "MIT",
+  "builtin-baseline": "ea1a7396b05637a53bf23c078647ecc0edee4b80",
+  "dependencies": [
+    "asio",
+    "ftxui",
+    "cli11",
+    "yaml-cpp",
+    "spdlog",
+    "catch2"
+  ]
+}
