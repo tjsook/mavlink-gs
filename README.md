@@ -69,13 +69,43 @@ you should be able to arm → takeoff → land.
 
 _Validated against PX4 `v1.18.0` (git-hash `aed118e`), Gazebo 8.14.0, x500 quadcopter._
 
-### Building (once the sources land)
+### Building
 
-Requires a C++20 compiler (Clang ≥17 or GCC ≥13), CMake ≥3.25, and vcpkg.
+**Prerequisites (host tools):**
+
+- A C++20 compiler (Apple Clang ≥17, upstream Clang ≥17, or GCC ≥13)
+- [CMake](https://cmake.org/) ≥ 3.25 and [Ninja](https://ninja-build.org/)
+- [`pkg-config`](https://www.freedesktop.org/wiki/Software/pkg-config/) — some vcpkg
+  ports (e.g. `asio`) invoke it while building
+
+On macOS (Homebrew):
 
 ```bash
-cmake --preset dev
+brew install cmake ninja pkg-config
+```
+
+vcpkg itself is vendored as a submodule, so no system-wide vcpkg install is needed.
+
+**One-time setup:**
+
+```bash
+# Clone with submodules (vcpkg + the MAVLink headers)
+git clone --recurse-submodules https://github.com/tjsook/mavlink-gs.git
+cd mavlink-gs
+
+# Already cloned without --recurse-submodules? Pull the submodules now:
+git submodule update --init --recursive
+
+# Bootstrap vcpkg — compiles the vcpkg tool from the vendored source, once
+./external/vcpkg/bootstrap-vcpkg.sh -disableMetrics
+```
+
+**Build, test, run:**
+
+```bash
+cmake --preset dev            # first run builds all deps from source (slow; cached after)
 cmake --build --preset dev
+ctest --preset dev            # run the unit tests
 ./build/dev/mavlink-gs --connect udp://127.0.0.1:14550
 ```
 
