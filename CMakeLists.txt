@@ -65,7 +65,7 @@ target_link_libraries(mavlink-gs PRIVATE
   CLI11::CLI11
   spdlog::spdlog
   yaml-cpp::yaml-cpp
-  ftxui::screen ftxui::dom ftxui::component)
+  ftxui::component)  # pulls in ftxui::dom and ftxui::screen transitively
 
 # --- Tests -------------------------------------------------------------------
 enable_testing()
