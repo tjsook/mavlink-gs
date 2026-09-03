@@ -12,8 +12,13 @@ concurrency:
 
 jobs:
   build-and-test:
-    name: Build & test (dev)
+    name: Build & test (${{ matrix.preset }})
     runs-on: ubuntu-latest
+    strategy:
+      # Don't cancel the asan job if dev fails (or vice versa) — we want both results.
+      fail-fast: false
+      matrix:
+        preset: [dev, asan]
     env:
       # vcpkg drops each built package here so it can be cached and reused.
       VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.vcpkg-cache
@@ -45,11 +50,11 @@ jobs:
       - name: Prepare vcpkg cache dir
         run: mkdir -p "$VCPKG_DEFAULT_BINARY_CACHE"
 
-      - name: Configure (dev preset)
-        run: cmake --preset dev
+      - name: Configure (${{ matrix.preset }} preset)
+        run: cmake --preset ${{ matrix.preset }}
 
       - name: Build
-        run: cmake --build --preset dev
+        run: cmake --build --preset ${{ matrix.preset }}
 
       - name: Test
-        run: ctest --preset dev --output-on-failure
+        run: ctest --preset ${{ matrix.preset }} --output-on-failure
