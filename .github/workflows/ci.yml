@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A newer push to the same branch cancels an in-flight run for it.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    name: Build & test (dev)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (with submodules)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install host tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build pkg-config
+
+      - name: Bootstrap vcpkg
+        run: ./external/vcpkg/bootstrap-vcpkg.sh -disableMetrics
+
+      - name: Configure (dev preset)
+        run: cmake --preset dev
+
+      - name: Build
+        run: cmake --build --preset dev
+
+      - name: Test
+        run: ctest --preset dev --output-on-failure
