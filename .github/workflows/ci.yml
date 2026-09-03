@@ -14,6 +14,9 @@ jobs:
   build-and-test:
     name: Build & test (dev)
     runs-on: ubuntu-latest
+    env:
+      # vcpkg drops each built package here so it can be cached and reused.
+      VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.vcpkg-cache
     steps:
       - name: Checkout (with submodules)
         uses: actions/checkout@v4
@@ -25,8 +28,22 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y ninja-build pkg-config
 
+      # Restore previously built dependencies. The key changes whenever
+      # vcpkg.json changes (deps or baseline), forcing a clean rebuild then.
+      - name: Cache vcpkg packages
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.VCPKG_DEFAULT_BINARY_CACHE }}
+          key: vcpkg-${{ runner.os }}-${{ hashFiles('vcpkg.json') }}
+          restore-keys: |
+            vcpkg-${{ runner.os }}-
+
       - name: Bootstrap vcpkg
         run: ./external/vcpkg/bootstrap-vcpkg.sh -disableMetrics
+
+      # vcpkg requires the binary-cache directory to exist before configure.
+      - name: Prepare vcpkg cache dir
+        run: mkdir -p "$VCPKG_DEFAULT_BINARY_CACHE"
 
       - name: Configure (dev preset)
         run: cmake --preset dev
