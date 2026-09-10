@@ -15,3 +15,6 @@ vcpkg_installed/
 compile_commands.json
 .cache/
 .DS_Store
+
+# Working tracker — kept local, not published
+TRACKER.md
