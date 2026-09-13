@@ -39,7 +39,10 @@ target_include_directories(mavlink INTERFACE
 # The executable and the tests both link this one library, so code is compiled
 # once and is testable without duplicating sources.
 add_library(mavlink-gs-core
-  src/core/version.cpp)
+  src/core/version.cpp
+  src/net/udp_link.cpp
+  src/mavlink/decoder.cpp
+  src/mavlink/format.cpp)
 
 # PUBLIC include dir: both this library's .cpp files and its consumers can
 # #include "core/...". PUBLIC because these headers are part of the lib's API.
@@ -69,7 +72,9 @@ target_link_libraries(mavlink-gs PRIVATE
 
 # --- Tests -------------------------------------------------------------------
 enable_testing()
-add_executable(mavlink-gs-tests tests/test_version.cpp)
+add_executable(mavlink-gs-tests
+  tests/test_version.cpp
+  tests/test_decoder.cpp)
 # Catch2WithMain provides Catch2's own main(), so tests need no main.cpp.
 target_link_libraries(mavlink-gs-tests PRIVATE
   mavlink-gs-core
