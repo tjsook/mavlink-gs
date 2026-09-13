@@ -39,7 +39,9 @@ target_include_directories(mavlink INTERFACE
 # The executable and the tests both link this one library, so code is compiled
 # once and is testable without duplicating sources.
 add_library(mavlink-gs-core
-  src/core/version.cpp)
+  src/core/version.cpp
+  src/mavlink/decoder.cpp
+  src/mavlink/format.cpp)
 
 # PUBLIC include dir: both this library's .cpp files and its consumers can
 # #include "core/...". PUBLIC because these headers are part of the lib's API.
