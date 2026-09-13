@@ -40,6 +40,7 @@ target_include_directories(mavlink INTERFACE
 # once and is testable without duplicating sources.
 add_library(mavlink-gs-core
   src/core/version.cpp
+  src/net/udp_link.cpp
   src/mavlink/decoder.cpp
   src/mavlink/format.cpp)
 
