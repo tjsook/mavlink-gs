@@ -72,7 +72,9 @@ target_link_libraries(mavlink-gs PRIVATE
 
 # --- Tests -------------------------------------------------------------------
 enable_testing()
-add_executable(mavlink-gs-tests tests/test_version.cpp)
+add_executable(mavlink-gs-tests
+  tests/test_version.cpp
+  tests/test_decoder.cpp)
 # Catch2WithMain provides Catch2's own main(), so tests need no main.cpp.
 target_link_libraries(mavlink-gs-tests PRIVATE
   mavlink-gs-core
