@@ -12,12 +12,13 @@ concurrency:
 
 jobs:
   build-and-test:
-    name: Build & test (${{ matrix.preset }})
-    runs-on: ubuntu-latest
+    name: Build & test (${{ matrix.os }}, ${{ matrix.preset }})
+    runs-on: ${{ matrix.os }}
     strategy:
-      # Don't cancel the asan job if dev fails (or vice versa) — we want both results.
+      # Don't cancel other jobs when one fails — we want every result.
       fail-fast: false
       matrix:
+        os: [ubuntu-latest, macos-latest]
         preset: [dev, asan]
     env:
       # vcpkg drops each built package here so it can be cached and reused.
@@ -28,10 +29,15 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Install host tools
+      - name: Install host tools (Linux)
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y ninja-build pkg-config
+
+      - name: Install host tools (macOS)
+        if: runner.os == 'macOS'
+        run: brew install ninja pkg-config
 
       # Restore previously built dependencies. The key changes whenever
       # vcpkg.json changes (deps or baseline), forcing a clean rebuild then.
