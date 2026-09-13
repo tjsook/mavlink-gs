@@ -2,12 +2,12 @@
 
 Human-readable snapshot of what's shipped and what's next. Checked boxes are done and on `main`.
 
-## v0.1 — It talks (Week 1)
-- [ ] Connects to PX4 SITL over UDP
-- [ ] Decodes `HEARTBEAT` / `GLOBAL_POSITION_INT` / `SYS_STATUS` / `ATTITUDE`
-- [ ] CLI-first, `std::cout` output
-- [ ] Graceful connect / disconnect
-- [ ] CI green (build + Catch2 + ASan + UBSan on Linux and macOS)
+## v0.1 — It talks (Week 1) ✅
+- [x] Connects to PX4 SITL over UDP
+- [x] Decodes `HEARTBEAT` / `GLOBAL_POSITION_INT` / `SYS_STATUS` / `ATTITUDE`
+- [x] CLI-first, `std::cout` output
+- [x] Graceful connect / disconnect
+- [x] CI green (build + Catch2 + ASan + UBSan on Linux and macOS)
 
 ## v0.5 — It shows (Week 2)
 - [ ] FTXUI TUI live-updating at ≥10 Hz
