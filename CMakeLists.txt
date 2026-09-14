@@ -80,7 +80,8 @@ add_executable(mavlink-gs-tests
   tests/test_version.cpp
   tests/test_decoder.cpp
   tests/test_vehicle_state.cpp
-  tests/test_dashboard.cpp)
+  tests/test_dashboard.cpp
+  tests/test_shared_state.cpp)
 # Catch2WithMain provides Catch2's own main(), so tests need no main.cpp.
 target_link_libraries(mavlink-gs-tests PRIVATE
   mavlink-gs-core
