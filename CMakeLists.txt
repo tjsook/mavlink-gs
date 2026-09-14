@@ -42,7 +42,8 @@ add_library(mavlink-gs-core
   src/core/version.cpp
   src/net/udp_link.cpp
   src/mavlink/decoder.cpp
-  src/mavlink/format.cpp)
+  src/mavlink/format.cpp
+  src/state/vehicle_state.cpp)
 
 # PUBLIC include dir: both this library's .cpp files and its consumers can
 # #include "core/...". PUBLIC because these headers are part of the lib's API.
@@ -74,7 +75,8 @@ target_link_libraries(mavlink-gs PRIVATE
 enable_testing()
 add_executable(mavlink-gs-tests
   tests/test_version.cpp
-  tests/test_decoder.cpp)
+  tests/test_decoder.cpp
+  tests/test_vehicle_state.cpp)
 # Catch2WithMain provides Catch2's own main(), so tests need no main.cpp.
 target_link_libraries(mavlink-gs-tests PRIVATE
   mavlink-gs-core
