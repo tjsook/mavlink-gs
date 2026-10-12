@@ -43,4 +43,19 @@ std::optional<std::span<const std::byte>> UdpLink::receive() {
   return std::span<const std::byte>(buffer_.data(), n);
 }
 
+bool UdpLink::send(const mavlink_message_t& msg) {
+  if (!has_remote()) return false;  // never heard from a vehicle; nowhere to go
+
+  std::array<std::uint8_t, MAVLINK_MAX_PACKET_LEN> buf{};
+  const unsigned len = mavlink_msg_to_send_buffer(buf.data(), &msg);
+
+  asio::error_code ec;
+  socket_.send_to(asio::buffer(buf.data(), len), remote_, 0, ec);
+  if (ec) {
+    spdlog::warn("command send failed: {}", ec.message());
+    return false;
+  }
+  return true;
+}
+
 }  // namespace mgs

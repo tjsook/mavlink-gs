@@ -7,6 +7,14 @@
 
 namespace mgs {
 
+// Outcome of the most recent command the user issued, for the UI to display.
+//   None      — no command sent this session
+//   Pending   — sent, awaiting acknowledgement (may be retransmitting)
+//   Accepted  — the vehicle acknowledged and accepted it
+//   Rejected  — the vehicle acknowledged but refused it
+//   TimedOut  — no acknowledgement after the retry budget ran out
+enum class CommandStatus { None, Pending, Accepted, Rejected, TimedOut };
+
 // The latest known telemetry for one vehicle — a snapshot, not a stream.
 //
 // v0.1 turned each message straight into a printed line. A dashboard instead
@@ -15,6 +23,13 @@ namespace mgs {
 // arrive. The UI thread reads this struct; the network thread writes it (v0.5
 // guards the shared copy with a mutex — see SharedState, added later).
 struct VehicleState {
+  // --- Vehicle identity (from the HEARTBEAT's source address) -------------
+  // Commands are addressed to these. Zero until the first HEARTBEAT arrives —
+  // identified() is the "do we know who to command?" check the UI gates on.
+  std::uint8_t  system_id     = 0;
+  std::uint8_t  component_id  = 0;
+  bool identified() const { return system_id != 0; }
+
   // --- HEARTBEAT: liveness + high-level mode ------------------------------
   bool          armed         = false;  // base_mode & MAV_MODE_FLAG_SAFETY_ARMED
   std::uint8_t  system_status = 0;      // MAV_STATE enum (standby, active, ...)
@@ -40,6 +55,10 @@ struct VehicleState {
   double roll_deg  = 0.0;
   double pitch_deg = 0.0;
   double yaw_deg   = 0.0;
+
+  // --- Last command issued (published by the network thread) --------------
+  CommandStatus last_command_status = CommandStatus::None;
+  std::uint16_t last_command_id     = 0;  // which MAV_CMD it was
 };
 
 // Fold one decoded MAVLink message into the running snapshot. Unknown message

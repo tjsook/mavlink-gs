@@ -13,6 +13,9 @@ void update(VehicleState& state, const mavlink_message_t& msg,
     case MAVLINK_MSG_ID_HEARTBEAT: {
       mavlink_heartbeat_t hb;
       mavlink_msg_heartbeat_decode(&msg, &hb);
+      // The vehicle's identity is on the message envelope, not in the payload.
+      state.system_id = msg.sysid;
+      state.component_id = msg.compid;
       state.armed = (hb.base_mode & MAV_MODE_FLAG_SAFETY_ARMED) != 0;
       state.system_status = hb.system_status;
       state.custom_mode = hb.custom_mode;

@@ -7,14 +7,19 @@
 #include <span>
 
 #include <asio.hpp>
+#include <common/mavlink.h>
 
 namespace mgs {
 
-// Minimal blocking UDP receiver for MAVLink datagrams.
+// Minimal blocking UDP receiver/sender for MAVLink datagrams.
 //
 // v0.1 is synchronous. receive() blocks up to a short internal timeout so the
-// caller's loop can react to shutdown between datagrams. We also record the
-// sender's endpoint so a later version can reply to it (command sending, v0.8).
+// caller's loop can react to shutdown between datagrams. We record the sender's
+// endpoint on receive; v0.8 uses it as the target for send() (command sending).
+//
+// Thread-safety: the socket is owned by one thread (the network thread). Both
+// receive() and send() run there, so the socket is never touched concurrently.
+// Commands cross from the UI thread through a CommandQueue, not this object.
 class UdpLink {
  public:
   // Bind a UDP socket to 0.0.0.0:<port> and start listening. Port 0 asks the
@@ -25,6 +30,14 @@ class UdpLink {
   // the received bytes (valid until the next call), or std::nullopt if the
   // timeout elapsed with no data.
   std::optional<std::span<const std::byte>> receive();
+
+  // Serialize and send a MAVLink message to the most recent remote endpoint.
+  // Returns false if no vehicle has been heard from yet (no known target) or
+  // if the send fails; true on success.
+  bool send(const mavlink_message_t& msg);
+
+  // Whether a vehicle endpoint is known yet (set by the first receive()).
+  bool has_remote() const noexcept { return remote_.port() != 0; }
 
   // The most recent sender (valid after the first successful receive()).
   const asio::ip::udp::endpoint& remote() const noexcept { return remote_; }
