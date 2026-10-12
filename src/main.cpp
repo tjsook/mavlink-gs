@@ -14,6 +14,7 @@
 
 #include "core/version.hpp"
 #include "mavlink/decoder.hpp"
+#include "net/command_queue.hpp"
 #include "net/udp_link.hpp"
 #include "state/shared_state.hpp"
 #include "state/vehicle_state.hpp"
@@ -68,6 +69,7 @@ int main(int argc, char** argv) {
   }
 
   mgs::SharedState shared;
+  mgs::CommandQueue commands;  // UI thread pushes; network thread sends
   std::atomic<bool> stop{false};
   std::string net_error;  // read only after network.join() (see below)
 
@@ -78,12 +80,21 @@ int main(int argc, char** argv) {
     mgs::MavlinkDecoder decoder;
     try {
       while (!stop) {
-        const auto packet = link->receive();
-        if (!packet) continue;  // poll timeout; loop back and re-check stop
-        const auto now = std::chrono::steady_clock::now();
-        for (const auto& msg : decoder.parse(*packet)) {
-          shared.modify(
-              [&](mgs::VehicleState& s) { mgs::update(s, msg, now); });
+        // receive() blocks up to its poll timeout, then returns nullopt. We do
+        // not `continue` on a timeout: command sending below must run every
+        // pass, not only when a datagram happened to arrive.
+        if (const auto packet = link->receive()) {
+          const auto now = std::chrono::steady_clock::now();
+          for (const auto& msg : decoder.parse(*packet)) {
+            shared.modify(
+                [&](mgs::VehicleState& s) { mgs::update(s, msg, now); });
+          }
+        }
+
+        // Send any commands the UI queued since the last pass. Drained here, on
+        // the socket-owning thread, so the UI thread never touches the socket.
+        for (const auto& cmd : commands.drain()) {
+          link->send(cmd);
         }
       }
     } catch (const std::exception& e) {
