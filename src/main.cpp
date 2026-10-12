@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <exception>
 #include <memory>
+#include <optional>
 #include <string>
 #include <thread>
 
@@ -14,6 +15,7 @@
 
 #include "core/version.hpp"
 #include "mavlink/command_tracker.hpp"
+#include "mavlink/commands.hpp"
 #include "mavlink/decoder.hpp"
 #include "net/command_queue.hpp"
 #include "net/udp_link.hpp"
@@ -33,6 +35,28 @@ constexpr auto kHeartbeatTimeout = 3s;
 
 // UI redraw period. 100 ms -> 10 Hz, meeting the v0.5 "live >= 10 Hz" target.
 constexpr auto kRefreshPeriod = 100ms;
+
+// Height above the vehicle's current altitude to request on takeoff.
+constexpr float kTakeoffHeightM = 2.5f;
+
+// The commands the palette can issue.
+enum class Cmd { Arm, Disarm, Takeoff, Land, Rtl };
+
+// Dangerous commands get a y/n confirmation; the rest fire immediately.
+bool needs_confirm(Cmd c) {
+  return c == Cmd::Arm || c == Cmd::Takeoff || c == Cmd::Rtl;
+}
+
+const char* cmd_name(Cmd c) {
+  switch (c) {
+    case Cmd::Arm: return "ARM";
+    case Cmd::Disarm: return "DISARM";
+    case Cmd::Takeoff: return "TAKEOFF";
+    case Cmd::Land: return "LAND";
+    case Cmd::Rtl: return "RTL";
+  }
+  return "";
+}
 
 // Extract the port from a "udp://host:port" string; fall back on any failure.
 std::uint16_t parse_port(const std::string& url, std::uint16_t fallback) {
@@ -133,21 +157,93 @@ int main(int argc, char** argv) {
   // --- UI (this thread): render the latest snapshot -----------------------
   auto screen = ftxui::ScreenInteractive::Fullscreen();
 
+  // UI-local command state. Only the UI thread touches these, so no lock.
+  std::optional<Cmd> pending_confirm;  // a dangerous command awaiting y/n
+  std::string note;                    // transient feedback (e.g. "no vehicle")
+
+  // Build the chosen command from the latest snapshot and queue it for sending.
+  // Refuses (with a note) if we can't address or safely issue it yet.
+  auto issue = [&](Cmd c) {
+    const mgs::VehicleState snap = shared.snapshot();
+    if (!snap.identified()) {
+      note = "no vehicle yet — command ignored";
+      return;
+    }
+    const std::uint8_t ts = snap.system_id;
+    const std::uint8_t tc = snap.component_id;
+    switch (c) {
+      case Cmd::Arm:
+        commands.push(mgs::arm_command(ts, tc, true));
+        break;
+      case Cmd::Disarm:
+        commands.push(mgs::arm_command(ts, tc, false));
+        break;
+      case Cmd::Takeoff:
+        if (!snap.has_position) {
+          note = "no position fix — cannot take off";
+          return;
+        }
+        commands.push(mgs::takeoff_command(
+            ts, tc, static_cast<float>(snap.altitude_m) + kTakeoffHeightM));
+        break;
+      case Cmd::Land:
+        commands.push(mgs::land_command(ts, tc));
+        break;
+      case Cmd::Rtl:
+        commands.push(mgs::rtl_command(ts, tc));
+        break;
+    }
+    note.clear();
+  };
+
   auto view = ftxui::Renderer([&] {
     const mgs::VehicleState snap = shared.snapshot();
     const bool connected =
         snap.last_heartbeat != std::chrono::steady_clock::time_point{} &&
         std::chrono::steady_clock::now() - snap.last_heartbeat <
             kHeartbeatTimeout;
-    return mgs::render_dashboard(snap, connected);
+    const std::string prompt =
+        pending_confirm
+            ? std::string(cmd_name(*pending_confirm)) + "? confirm (y/n)"
+            : "";
+    return mgs::render_dashboard(snap, connected, prompt, note);
   });
 
   auto root = ftxui::CatchEvent(view, [&](const ftxui::Event& e) {
+    // While confirming a dangerous command, y/n resolves it and nothing else.
+    if (pending_confirm) {
+      if (e == ftxui::Event::Character('y')) {
+        issue(*pending_confirm);
+        pending_confirm.reset();
+      } else if (e == ftxui::Event::Character('n') ||
+                 e == ftxui::Event::Escape) {
+        pending_confirm.reset();
+        note = "cancelled";
+      }
+      return true;  // swallow all keys while the prompt is up
+    }
+
     if (e == ftxui::Event::Character('q') || e == ftxui::Event::Escape) {
       screen.Exit();
       return true;
     }
-    return false;
+
+    // Map a key to a command. Dangerous ones arm the confirm prompt; the rest
+    // issue immediately.
+    std::optional<Cmd> chosen;
+    if (e == ftxui::Event::Character('a')) chosen = Cmd::Arm;
+    else if (e == ftxui::Event::Character('d')) chosen = Cmd::Disarm;
+    else if (e == ftxui::Event::Character('t')) chosen = Cmd::Takeoff;
+    else if (e == ftxui::Event::Character('l')) chosen = Cmd::Land;
+    else if (e == ftxui::Event::Character('r')) chosen = Cmd::Rtl;
+
+    if (!chosen) return false;
+    if (needs_confirm(*chosen)) {
+      pending_confirm = chosen;
+    } else {
+      issue(*chosen);
+    }
+    return true;
   });
 
   // --- Refresh ticker: wake the UI 10x/second -----------------------------

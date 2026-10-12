@@ -48,3 +48,26 @@ TEST_CASE("dashboard reflects a live, armed vehicle", "[ui]") {
   CHECK(out.find("42%") != std::string::npos);
   CHECK(out.find("awaiting GPS fix") == std::string::npos);
 }
+
+TEST_CASE("dashboard shows the command hint bar by default", "[ui]") {
+  const mgs::VehicleState state;
+  const std::string out = render_to_text(mgs::render_dashboard(state, false));
+  CHECK(out.find("[q]uit") != std::string::npos);     // hint bar present
+  CHECK(out.find("[t]akeoff") != std::string::npos);  // bracketed mnemonics
+}
+
+TEST_CASE("dashboard shows a confirmation prompt when asked", "[ui]") {
+  const mgs::VehicleState state;
+  const std::string out = render_to_text(
+      mgs::render_dashboard(state, true, "TAKEOFF? confirm (y/n)"));
+  CHECK(out.find("TAKEOFF? confirm") != std::string::npos);
+}
+
+TEST_CASE("dashboard shows the last command's outcome", "[ui]") {
+  mgs::VehicleState state;
+  state.last_command_status = mgs::CommandStatus::Rejected;
+  state.last_command_id = MAV_CMD_NAV_TAKEOFF;
+
+  const std::string out = render_to_text(mgs::render_dashboard(state, true));
+  CHECK(out.find("TAKEOFF rejected") != std::string::npos);
+}
