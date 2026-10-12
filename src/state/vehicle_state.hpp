@@ -7,6 +7,14 @@
 
 namespace mgs {
 
+// Outcome of the most recent command the user issued, for the UI to display.
+//   None      — no command sent this session
+//   Pending   — sent, awaiting acknowledgement (may be retransmitting)
+//   Accepted  — the vehicle acknowledged and accepted it
+//   Rejected  — the vehicle acknowledged but refused it
+//   TimedOut  — no acknowledgement after the retry budget ran out
+enum class CommandStatus { None, Pending, Accepted, Rejected, TimedOut };
+
 // The latest known telemetry for one vehicle — a snapshot, not a stream.
 //
 // v0.1 turned each message straight into a printed line. A dashboard instead
@@ -47,6 +55,10 @@ struct VehicleState {
   double roll_deg  = 0.0;
   double pitch_deg = 0.0;
   double yaw_deg   = 0.0;
+
+  // --- Last command issued (published by the network thread) --------------
+  CommandStatus last_command_status = CommandStatus::None;
+  std::uint16_t last_command_id     = 0;  // which MAV_CMD it was
 };
 
 // Fold one decoded MAVLink message into the running snapshot. Unknown message

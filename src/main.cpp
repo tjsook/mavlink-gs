@@ -13,6 +13,7 @@
 #include <spdlog/spdlog.h>
 
 #include "core/version.hpp"
+#include "mavlink/command_tracker.hpp"
 #include "mavlink/decoder.hpp"
 #include "net/command_queue.hpp"
 #include "net/udp_link.hpp"
@@ -78,23 +79,50 @@ int main(int argc, char** argv) {
   // timeout, so the loop re-checks `stop` a few times a second on shutdown.
   std::thread network([&, link = std::move(link)]() mutable {
     mgs::MavlinkDecoder decoder;
+    mgs::CommandTracker tracker;     // one in-flight command at a time
+    mavlink_message_t in_flight{};   // the message to resend on retry
+    mgs::CommandStatus published = mgs::CommandStatus::None;
     try {
       while (!stop) {
+        const auto now = std::chrono::steady_clock::now();
+
         // receive() blocks up to its poll timeout, then returns nullopt. We do
-        // not `continue` on a timeout: command sending below must run every
+        // not `continue` on a timeout: command handling below must run every
         // pass, not only when a datagram happened to arrive.
         if (const auto packet = link->receive()) {
-          const auto now = std::chrono::steady_clock::now();
           for (const auto& msg : decoder.parse(*packet)) {
             shared.modify(
                 [&](mgs::VehicleState& s) { mgs::update(s, msg, now); });
+            if (msg.msgid == MAVLINK_MSG_ID_COMMAND_ACK) {
+              mavlink_command_ack_t ack;
+              mavlink_msg_command_ack_decode(&msg, &ack);
+              tracker.on_ack(ack);  // resolve/accept/reject the in-flight cmd
+            }
           }
         }
 
-        // Send any commands the UI queued since the last pass. Drained here, on
-        // the socket-owning thread, so the UI thread never touches the socket.
+        // Send commands the UI queued since the last pass. Drained here, on the
+        // socket-owning thread, so the UI thread never touches the socket.
         for (const auto& cmd : commands.drain()) {
-          link->send(cmd);
+          if (link->send(cmd)) {
+            mavlink_command_long_t cl;
+            mavlink_msg_command_long_decode(&cmd, &cl);
+            tracker.begin(cl.command, now);  // count this send as attempt 1
+            in_flight = cmd;
+          }
+        }
+
+        // Retransmit the in-flight command if its ack is overdue.
+        if (tracker.should_resend(now)) link->send(in_flight);
+
+        // Publish command status to the UI only when it changes.
+        if (tracker.status() != published) {
+          published = tracker.status();
+          const auto id = tracker.command();
+          shared.modify([&](mgs::VehicleState& s) {
+            s.last_command_status = published;
+            s.last_command_id = id;
+          });
         }
       }
     } catch (const std::exception& e) {
