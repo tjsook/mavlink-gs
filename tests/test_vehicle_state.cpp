@@ -35,6 +35,22 @@ TEST_CASE("heartbeat sets armed flag and freshness stamp", "[state]") {
   CHECK(state.last_heartbeat == kNow);
 }
 
+TEST_CASE("heartbeat captures the vehicle's identity for addressing",
+          "[state]") {
+  mgs::VehicleState state;
+  CHECK_FALSE(state.identified());  // nothing heard yet
+
+  mavlink_message_t msg;
+  mavlink_msg_heartbeat_pack(/*system_id=*/3, /*component_id=*/1, &msg,
+                             MAV_TYPE_QUADROTOR, MAV_AUTOPILOT_PX4, 0, 0,
+                             MAV_STATE_STANDBY);
+  mgs::update(state, msg, kNow);
+
+  CHECK(state.identified());
+  CHECK(state.system_id == 3);
+  CHECK(state.component_id == 1);
+}
+
 TEST_CASE("sys_status is scaled into volts, amps, percent", "[state]") {
   mgs::VehicleState state;
   mavlink_message_t msg;

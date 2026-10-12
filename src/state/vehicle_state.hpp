@@ -15,6 +15,13 @@ namespace mgs {
 // arrive. The UI thread reads this struct; the network thread writes it (v0.5
 // guards the shared copy with a mutex — see SharedState, added later).
 struct VehicleState {
+  // --- Vehicle identity (from the HEARTBEAT's source address) -------------
+  // Commands are addressed to these. Zero until the first HEARTBEAT arrives —
+  // identified() is the "do we know who to command?" check the UI gates on.
+  std::uint8_t  system_id     = 0;
+  std::uint8_t  component_id  = 0;
+  bool identified() const { return system_id != 0; }
+
   // --- HEARTBEAT: liveness + high-level mode ------------------------------
   bool          armed         = false;  // base_mode & MAV_MODE_FLAG_SAFETY_ARMED
   std::uint8_t  system_status = 0;      // MAV_STATE enum (standby, active, ...)
