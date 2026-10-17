@@ -62,6 +62,63 @@ TEST_CASE("flight log frames a record as big-endian timestamp + raw bytes",
   std::filesystem::remove_all(dir);
 }
 
+TEST_CASE("recorded .tlog re-parses as the original messages, in order",
+          "[log]") {
+  const auto dir = std::filesystem::temp_directory_path() / "mgs-test-log-rt";
+  std::filesystem::remove_all(dir);
+
+  mavlink_message_t hb, att;
+  mavlink_msg_heartbeat_pack(1, 1, &hb, MAV_TYPE_QUADROTOR, MAV_AUTOPILOT_PX4,
+                             0, 0, MAV_STATE_ACTIVE);
+  mavlink_msg_attitude_pack(1, 1, &att, 123, 0.1f, 0.2f, 0.3f, 0.0f, 0.0f,
+                            0.0f);
+
+  const std::chrono::system_clock::time_point t1{
+      std::chrono::microseconds(1'000'000'000'000'000LL)};
+  const std::chrono::system_clock::time_point t2{
+      std::chrono::microseconds(1'000'000'000'500'000LL)};
+
+  std::filesystem::path path;
+  {
+    mgs::FlightLog log(dir);
+    REQUIRE(log.healthy());
+    path = log.path();
+    log.record(hb, t1);
+    log.record(att, t2);
+    log.flush();
+  }
+
+  const std::vector<std::uint8_t> bytes = read_all(path);
+
+  // Walk the file as a reader like QGroundControl would: an 8-byte big-endian
+  // timestamp, then exactly one MAVLink frame, repeating to end of file.
+  std::vector<std::uint64_t> stamps;
+  std::vector<int> ids;
+  std::size_t i = 0;
+  mavlink_message_t msg;
+  mavlink_status_t status;
+  while (i + 8 <= bytes.size()) {
+    std::uint64_t ts = 0;
+    for (int b = 0; b < 8; ++b) ts = (ts << 8) | bytes[i + b];
+    i += 8;
+    bool done = false;
+    while (i < bytes.size() && !done) {
+      done = mavlink_parse_char(MAVLINK_COMM_1, bytes[i++], &msg, &status) == 1;
+    }
+    REQUIRE(done);
+    stamps.push_back(ts);
+    ids.push_back(msg.msgid);
+  }
+
+  REQUIRE(stamps.size() == 2);
+  CHECK(stamps[0] == 1'000'000'000'000'000ULL);
+  CHECK(stamps[1] == 1'000'000'000'500'000ULL);
+  CHECK(ids[0] == MAVLINK_MSG_ID_HEARTBEAT);
+  CHECK(ids[1] == MAVLINK_MSG_ID_ATTITUDE);
+
+  std::filesystem::remove_all(dir);
+}
+
 TEST_CASE("flight log degrades instead of throwing when it cannot open",
           "[log]") {
   // Put a regular file where a directory would need to be, so creating the log
