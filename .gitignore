@@ -21,3 +21,6 @@ TRACKER.md
 
 # Python virtualenv for local sim/testing
 .venv/
+
+# Flight-log recordings (the default --log-dir), written at runtime
+logs/
