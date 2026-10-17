@@ -2,10 +2,11 @@
 
 **A terminal-based ground station for MAVLink-speaking autonomous vehicles.**
 
-Connect to a real or simulated drone over UDP or serial, watch live telemetry, send
-commands, upload missions, and record flight logs, all from a single, keyboard-driven
-TUI. Grabbing inspo from [QGroundControl](https://qgroundcontrol.com/) or Mission Planner,
-but stripped down, TUI-first, and hackable.
+Connect to a real or simulated drone over UDP, watch live telemetry, send commands, and
+record flight logs, all from a single, keyboard-driven TUI. Mission upload and serial links
+are on the [roadmap](./ROADMAP.md). Grabbing inspo from
+[QGroundControl](https://qgroundcontrol.com/) or Mission Planner, but stripped down,
+TUI-first, and hackable.
 
 <!-- Hero screenshot goes here once v0.5 lands:
      terminal connected to PX4 SITL showing live telemetry + mission + command bar. -->
