@@ -71,3 +71,23 @@ TEST_CASE("dashboard shows the last command's outcome", "[ui]") {
   const std::string out = render_to_text(mgs::render_dashboard(state, true));
   CHECK(out.find("TAKEOFF rejected") != std::string::npos);
 }
+
+TEST_CASE("dashboard shows the recording indicator", "[ui]") {
+  mgs::VehicleState state;
+
+  SECTION("off: no indicator") {
+    const std::string out = render_to_text(mgs::render_dashboard(state, true));
+    CHECK(out.find("REC") == std::string::npos);
+    CHECK(out.find("LOG FAIL") == std::string::npos);
+  }
+  SECTION("recording: REC dot") {
+    state.log_status = mgs::LogStatus::Recording;
+    const std::string out = render_to_text(mgs::render_dashboard(state, true));
+    CHECK(out.find("REC") != std::string::npos);
+  }
+  SECTION("failed: loud warning") {
+    state.log_status = mgs::LogStatus::Failed;
+    const std::string out = render_to_text(mgs::render_dashboard(state, true));
+    CHECK(out.find("LOG FAIL") != std::string::npos);
+  }
+}

@@ -34,6 +34,20 @@ std::string command_label(std::uint16_t command) {
   }
 }
 
+// Header chip for the flight-log recorder: a red "REC" dot while healthy, a
+// loud warning if a write failed mid-session, nothing when logging is off.
+Element log_indicator(const VehicleState& s) {
+  switch (s.log_status) {
+    case LogStatus::Recording:
+      return text(" ● REC ") | color(Color::Red) | bold;
+    case LogStatus::Failed:
+      return text(" LOG FAIL ") | color(Color::White) | bgcolor(Color::Red);
+    case LogStatus::Off:
+    default:
+      return text("");
+  }
+}
+
 // The right-hand status chip: outcome of the last command, colored by result.
 Element command_status(const VehicleState& s) {
   switch (s.last_command_status) {
@@ -67,8 +81,8 @@ Element render_dashboard(const VehicleState& s, bool connected,
   Element arm = s.armed
       ? text(" ARMED ") | color(Color::Black) | bgcolor(Color::Yellow)
       : text(" DISARMED ") | dim;
-  Element header =
-      hbox({text("mavlink-gs") | bold, filler(), arm, text(" "), link});
+  Element header = hbox({text("mavlink-gs") | bold, filler(),
+                         log_indicator(s), arm, text(" "), link});
 
   // --- Attitude -----------------------------------------------------------
   Element attitude = panel("Attitude", {

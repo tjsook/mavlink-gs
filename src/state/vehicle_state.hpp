@@ -15,6 +15,12 @@ namespace mgs {
 //   TimedOut  — no acknowledgement after the retry budget ran out
 enum class CommandStatus { None, Pending, Accepted, Rejected, TimedOut };
 
+// State of the flight-log recorder, for the UI to display.
+//   Off       — no log file open this session (e.g. --no-log)
+//   Recording — a file is open and healthy
+//   Failed    — a write error turned logging off mid-session
+enum class LogStatus { Off, Recording, Failed };
+
 // The latest known telemetry for one vehicle — a snapshot, not a stream.
 //
 // v0.1 turned each message straight into a printed line. A dashboard instead
@@ -59,6 +65,9 @@ struct VehicleState {
   // --- Last command issued (published by the network thread) --------------
   CommandStatus last_command_status = CommandStatus::None;
   std::uint16_t last_command_id     = 0;  // which MAV_CMD it was
+
+  // --- Flight-log recorder status (published by the network thread) -------
+  LogStatus log_status = LogStatus::Off;
 };
 
 // Fold one decoded MAVLink message into the running snapshot. Unknown message
