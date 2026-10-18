@@ -64,4 +64,14 @@ mavlink_message_t rtl_command(std::uint8_t target_system,
   return msg;
 }
 
+mavlink_message_t gcs_heartbeat() {
+  mavlink_message_t msg;
+  // MAV_TYPE_GCS + MAV_AUTOPILOT_INVALID is how a ground station identifies
+  // itself. No mode flags; MAV_STATE_ACTIVE just says "up and running".
+  mavlink_msg_heartbeat_pack(kGcsSystemId, kGcsComponentId, &msg, MAV_TYPE_GCS,
+                             MAV_AUTOPILOT_INVALID, /*base_mode=*/0,
+                             /*custom_mode=*/0, MAV_STATE_ACTIVE);
+  return msg;
+}
+
 }  // namespace mgs
