@@ -23,7 +23,7 @@ Human-readable snapshot of what's shipped and what's next. Checked boxes are don
 ## v1.0 — It flies missions (Week 6)
 - [ ] Mission upload from YAML (`MISSION_ITEM_INT` sequence)
 - [ ] Mission download + display
-- [ ] Flight log recording (`.tlog` raw stream + parsed CSV)
+- [x] Flight log recording — `.tlog` raw stream (QGC-compatible); parsed CSV still TODO
 - [ ] One differentiator (pick: multi-vehicle / log playback / ASCII map)
 - [ ] Hero screenshot + demo video in README
 - [ ] Homebrew tap published, static Linux release binary in GitHub Releases

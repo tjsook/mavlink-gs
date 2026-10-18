@@ -14,6 +14,7 @@
 #include <spdlog/spdlog.h>
 
 #include "core/version.hpp"
+#include "log/flight_log.hpp"
 #include "mavlink/command_tracker.hpp"
 #include "mavlink/commands.hpp"
 #include "mavlink/decoder.hpp"
@@ -35,6 +36,10 @@ constexpr auto kHeartbeatTimeout = 3s;
 
 // UI redraw period. 100 ms -> 10 Hz, meeting the v0.5 "live >= 10 Hz" target.
 constexpr auto kRefreshPeriod = 100ms;
+
+// How often the flight log is flushed to disk. Buffered in between, so the hot
+// loop never waits on the disk; a crash loses at most this much of the tail.
+constexpr auto kFlushInterval = 1s;
 
 // Height above the vehicle's current altitude to request on takeoff.
 constexpr float kTakeoffHeightM = 2.5f;
@@ -78,6 +83,14 @@ int main(int argc, char** argv) {
   std::string connection = "udp://127.0.0.1:14550";
   app.add_option("--connect", connection,
                  "Connection URL, e.g. udp://127.0.0.1:14550");
+
+  std::string log_dir = "logs";
+  app.add_option("--log-dir", log_dir,
+                 "Directory for .tlog flight recordings")
+      ->capture_default_str();
+  bool no_log = false;
+  app.add_flag("--no-log", no_log, "Disable flight-log recording");
+
   CLI11_PARSE(app, argc, argv);
 
   const std::uint16_t port = parse_port(connection, 14550);
@@ -93,6 +106,19 @@ int main(int argc, char** argv) {
     return 1;
   }
 
+  // Open the flight log before the TUI, so the "recording to <path>" line (or a
+  // failure notice) is readable on the terminal. A failed open does not stop us
+  // — logging is a passenger, never the pilot.
+  std::unique_ptr<mgs::FlightLog> flight_log;
+  if (!no_log) {
+    flight_log = std::make_unique<mgs::FlightLog>(log_dir);
+    if (flight_log->healthy()) {
+      spdlog::info("recording flight log to {}", flight_log->path().string());
+    } else {
+      spdlog::warn("flight logging disabled: {}", flight_log->error());
+    }
+  }
+
   mgs::SharedState shared;
   mgs::CommandQueue commands;  // UI thread pushes; network thread sends
   std::atomic<bool> stop{false};
@@ -101,11 +127,20 @@ int main(int argc, char** argv) {
   // --- Network thread: receive -> decode -> fold into shared state --------
   // Owns the socket (moved in). receive() blocks up to its internal poll
   // timeout, so the loop re-checks `stop` a few times a second on shutdown.
-  std::thread network([&, link = std::move(link)]() mutable {
+  std::thread network([&, link = std::move(link),
+                       log = std::move(flight_log)]() mutable {
     mgs::MavlinkDecoder decoder;
     mgs::CommandTracker tracker;     // one in-flight command at a time
     mavlink_message_t in_flight{};   // the message to resend on retry
     mgs::CommandStatus published = mgs::CommandStatus::None;
+    mgs::LogStatus log_published = mgs::LogStatus::Off;
+    auto last_flush = std::chrono::steady_clock::now();
+
+    // The log timestamp is wall-clock (system_clock), not the steady_clock the
+    // loop uses for timeouts: a .tlog means nothing to QGroundControl unless its
+    // times are real "since 1970" times. Two clocks, two jobs.
+    const auto log_now = [] { return std::chrono::system_clock::now(); };
+
     try {
       while (!stop) {
         const auto now = std::chrono::steady_clock::now();
@@ -117,6 +152,7 @@ int main(int argc, char** argv) {
           for (const auto& msg : decoder.parse(*packet)) {
             shared.modify(
                 [&](mgs::VehicleState& s) { mgs::update(s, msg, now); });
+            if (log) log->record(msg, log_now());  // record what we received
             if (msg.msgid == MAVLINK_MSG_ID_COMMAND_ACK) {
               mavlink_command_ack_t ack;
               mavlink_msg_command_ack_decode(&msg, &ack);
@@ -133,11 +169,21 @@ int main(int argc, char** argv) {
             mavlink_msg_command_long_decode(&cmd, &cl);
             tracker.begin(cl.command, now);  // count this send as attempt 1
             in_flight = cmd;
+            if (log) log->record(cmd, log_now());  // record what we sent, too
           }
         }
 
         // Retransmit the in-flight command if its ack is overdue.
-        if (tracker.should_resend(now)) link->send(in_flight);
+        if (tracker.should_resend(now)) {
+          if (link->send(in_flight) && log) log->record(in_flight, log_now());
+        }
+
+        // Flush the log on a timer, not per message: the disk stays off the hot
+        // path. A write failure here turns logging off inside the recorder.
+        if (log && now - last_flush >= kFlushInterval) {
+          log->flush();
+          last_flush = now;
+        }
 
         // Publish command status to the UI only when it changes.
         if (tracker.status() != published) {
@@ -147,6 +193,18 @@ int main(int argc, char** argv) {
             s.last_command_status = published;
             s.last_command_id = id;
           });
+        }
+
+        // Publish log status only when it changes (Recording -> Failed on a bad
+        // write), so the dashboard can warn without us touching it per pass.
+        const mgs::LogStatus log_status =
+            !log ? mgs::LogStatus::Off
+                 : (log->healthy() ? mgs::LogStatus::Recording
+                                   : mgs::LogStatus::Failed);
+        if (log_status != log_published) {
+          log_published = log_status;
+          shared.modify(
+              [&](mgs::VehicleState& s) { s.log_status = log_status; });
         }
       }
     } catch (const std::exception& e) {
