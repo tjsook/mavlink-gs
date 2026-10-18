@@ -35,4 +35,9 @@ mavlink_message_t land_command(std::uint8_t target_system,
 mavlink_message_t rtl_command(std::uint8_t target_system,
                               std::uint8_t target_component);
 
+// HEARTBEAT announcing us as a ground control station. Not a command, but it
+// shares the GCS source identity. A GCS must send this at about 1 Hz; without
+// it the autopilot reports "no connection to the GCS" and refuses to arm.
+mavlink_message_t gcs_heartbeat();
+
 }  // namespace mgs

@@ -63,3 +63,14 @@ TEST_CASE("built commands carry our GCS identity as the source", "[commands]") {
   CHECK(msg.sysid == 255);                        // conventional GCS system id
   CHECK(msg.compid == MAV_COMP_ID_MISSIONPLANNER);
 }
+
+TEST_CASE("gcs_heartbeat identifies us as a ground station", "[commands]") {
+  const auto msg = mgs::gcs_heartbeat();
+  CHECK(msg.msgid == MAVLINK_MSG_ID_HEARTBEAT);
+  CHECK(msg.sysid == 255);  // same GCS identity as the commands we send
+
+  mavlink_heartbeat_t hb;
+  mavlink_msg_heartbeat_decode(&msg, &hb);
+  CHECK(hb.type == MAV_TYPE_GCS);               // "I am a ground station"
+  CHECK(hb.autopilot == MAV_AUTOPILOT_INVALID);  // a GCS has no autopilot
+}

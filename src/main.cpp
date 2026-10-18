@@ -41,6 +41,10 @@ constexpr auto kRefreshPeriod = 100ms;
 // loop never waits on the disk; a crash loses at most this much of the tail.
 constexpr auto kFlushInterval = 1s;
 
+// How often we announce ourselves to the vehicle with a GCS heartbeat. Without
+// this the autopilot reports "no connection to the GCS" and refuses to arm.
+constexpr auto kHeartbeatPeriod = 1s;
+
 // Height above the vehicle's current altitude to request on takeoff.
 constexpr float kTakeoffHeightM = 2.5f;
 
@@ -135,6 +139,9 @@ int main(int argc, char** argv) {
     mgs::CommandStatus published = mgs::CommandStatus::None;
     mgs::LogStatus log_published = mgs::LogStatus::Off;
     auto last_flush = std::chrono::steady_clock::now();
+    // Back-date so the first heartbeat goes out as soon as we know the vehicle.
+    auto last_heartbeat_sent =
+        std::chrono::steady_clock::now() - kHeartbeatPeriod;
 
     // The log timestamp is wall-clock (system_clock), not the steady_clock the
     // loop uses for timeouts: a .tlog means nothing to QGroundControl unless its
@@ -176,6 +183,15 @@ int main(int argc, char** argv) {
         // Retransmit the in-flight command if its ack is overdue.
         if (tracker.should_resend(now)) {
           if (link->send(in_flight) && log) log->record(in_flight, log_now());
+        }
+
+        // Announce ourselves as a GCS about once a second. send() is a no-op
+        // until the first datagram tells us the vehicle's address, so these
+        // start flowing as soon as telemetry arrives.
+        if (now - last_heartbeat_sent >= kHeartbeatPeriod) {
+          const auto hb = mgs::gcs_heartbeat();
+          if (link->send(hb) && log) log->record(hb, log_now());
+          last_heartbeat_sent = now;
         }
 
         // Flush the log on a timer, not per message: the disk stays off the hot
