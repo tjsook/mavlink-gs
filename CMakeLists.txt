@@ -41,6 +41,7 @@ target_include_directories(mavlink INTERFACE
 add_library(mavlink-gs-core
   src/core/version.cpp
   src/net/udp_link.cpp
+  src/net/waker.cpp
   src/mavlink/decoder.cpp
   src/mavlink/format.cpp
   src/mavlink/commands.cpp
@@ -87,6 +88,7 @@ add_executable(mavlink-gs-tests
   tests/test_shared_state.cpp
   tests/test_commands.cpp
   tests/test_command_link.cpp
+  tests/test_waker.cpp
   tests/test_command_tracker.cpp
   tests/test_flight_log.cpp)
 # Catch2WithMain provides Catch2's own main(), so tests need no main.cpp.

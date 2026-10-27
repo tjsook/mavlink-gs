@@ -12,6 +12,7 @@
 #include "mavlink/decoder.hpp"
 #include "net/command_queue.hpp"
 #include "net/udp_link.hpp"
+#include "net/waker.hpp"
 
 namespace {
 
@@ -77,7 +78,8 @@ TEST_CASE("UdpLink::send delivers a command to the last sender", "[net]") {
 
 TEST_CASE("CommandQueue hands messages over in order and drains empty",
           "[net]") {
-  mgs::CommandQueue q;
+  mgs::Waker wake;
+  mgs::CommandQueue q(wake);
   q.push(mgs::arm_command(1, 1, true));
   q.push(mgs::takeoff_command(1, 1, 500.0f));
 
@@ -90,7 +92,8 @@ TEST_CASE("CommandQueue hands messages over in order and drains empty",
 }
 
 TEST_CASE("CommandQueue is safe under concurrent push/drain", "[net]") {
-  mgs::CommandQueue q;
+  mgs::Waker wake;
+  mgs::CommandQueue q(wake);
   constexpr int kPushers = 4;
   constexpr int kPer = 5000;
 
