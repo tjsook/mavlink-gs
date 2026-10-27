@@ -20,6 +20,7 @@
 #include "mavlink/decoder.hpp"
 #include "net/command_queue.hpp"
 #include "net/udp_link.hpp"
+#include "net/waker.hpp"
 #include "state/shared_state.hpp"
 #include "state/vehicle_state.hpp"
 #include "ui/dashboard.hpp"
@@ -124,13 +125,14 @@ int main(int argc, char** argv) {
   }
 
   mgs::SharedState shared;
-  mgs::CommandQueue commands;  // UI thread pushes; network thread sends
+  mgs::Waker wake;  // knocks the network thread out of poll()
+  mgs::CommandQueue commands(wake);  // UI thread pushes; network thread sends
   std::atomic<bool> stop{false};
   std::string net_error;  // read only after network.join() (see below)
 
   // --- Network thread: receive -> decode -> fold into shared state --------
-  // Owns the socket (moved in). receive() blocks up to its internal poll
-  // timeout, so the loop re-checks `stop` a few times a second on shutdown.
+  // Owns the socket (moved in). receive() sleeps until a datagram arrives, the
+  // Waker rings (a queued command, or shutdown), or its poll timeout ends.
   std::thread network([&, link = std::move(link),
                        log = std::move(flight_log)]() mutable {
     mgs::MavlinkDecoder decoder;
@@ -152,10 +154,10 @@ int main(int argc, char** argv) {
       while (!stop) {
         const auto now = std::chrono::steady_clock::now();
 
-        // receive() blocks up to its poll timeout, then returns nullopt. We do
-        // not `continue` on a timeout: command handling below must run every
-        // pass, not only when a datagram happened to arrive.
-        if (const auto packet = link->receive()) {
+        // receive() returns nullopt on a timeout or a wake. We do not
+        // `continue` then: command handling below must run every pass, not
+        // only when a datagram happened to arrive.
+        if (const auto packet = link->receive(wake.fd())) {
           for (const auto& msg : decoder.parse(*packet)) {
             shared.modify(
                 [&](mgs::VehicleState& s) { mgs::update(s, msg, now); });
@@ -167,6 +169,12 @@ int main(int argc, char** argv) {
             }
           }
         }
+
+        // Clear the wake BEFORE draining. A push that lands between the two
+        // leaves a fresh byte in the pipe, so the worst case is one harmless
+        // extra wake. The reverse order could erase that push's byte after we
+        // took the queue, stranding its command until the next poll timeout.
+        wake.clear();
 
         // Send commands the UI queued since the last pass. Drained here, on the
         // socket-owning thread, so the UI thread never touches the socket.
@@ -335,6 +343,7 @@ int main(int argc, char** argv) {
 
   // --- Shutdown -----------------------------------------------------------
   stop = true;
+  wake.notify();  // don't make shutdown wait out the poll timeout
   ticker.join();
   network.join();
   if (!net_error.empty()) {

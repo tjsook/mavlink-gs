@@ -13,9 +13,10 @@ namespace mgs {
 
 // Minimal blocking UDP receiver/sender for MAVLink datagrams.
 //
-// v0.1 is synchronous. receive() blocks up to a short internal timeout so the
-// caller's loop can react to shutdown between datagrams. We record the sender's
-// endpoint on receive; v0.8 uses it as the target for send() (command sending).
+// receive() sleeps in poll() until a datagram arrives, a Waker fires, or a
+// short internal timeout ends. The Waker lets another thread (the UI, queuing a
+// command) cut the sleep short instead of waiting out the timeout. We record the
+// sender's endpoint on receive; v0.8 uses it as the target for send().
 //
 // Thread-safety: the socket is owned by one thread (the network thread). Both
 // receive() and send() run there, so the socket is never touched concurrently.
@@ -28,8 +29,9 @@ class UdpLink {
 
   // Wait up to the internal poll timeout for a datagram. Returns a view over
   // the received bytes (valid until the next call), or std::nullopt if the
-  // timeout elapsed with no data.
-  std::optional<std::span<const std::byte>> receive();
+  // timeout elapsed or `wake_fd` became readable first. Pass a Waker's fd() as
+  // `wake_fd`; the default -1 means "watch the socket only".
+  std::optional<std::span<const std::byte>> receive(int wake_fd = -1);
 
   // Serialize and send a MAVLink message to the most recent remote endpoint.
   // Returns false if no vehicle has been heard from yet (no known target) or
