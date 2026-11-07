@@ -46,6 +46,7 @@ add_library(mavlink-gs-core
   src/mavlink/format.cpp
   src/mavlink/commands.cpp
   src/mavlink/command_tracker.cpp
+  src/mission/mission.cpp
   src/log/flight_log.cpp
   src/state/vehicle_state.cpp
   src/ui/dashboard.cpp)
@@ -60,13 +61,13 @@ target_compile_definitions(mavlink-gs-core PRIVATE
   MGS_VERSION="${PROJECT_VERSION}")
 
 # asio + mavlink are PUBLIC: they will appear in core's public headers later, so
-# consumers need their include paths. spdlog is PRIVATE: an internal logging
-# detail that never shows up in core's headers.
+# consumers need their include paths. spdlog and yaml-cpp are PRIVATE: internal
+# details (logging, mission parsing) that never show up in core's headers.
 # ftxui::dom is PUBLIC: ui/dashboard.hpp returns an ftxui::Element, so consumers
 # (the exe, the tests) need its headers. component/screen come in transitively.
 target_link_libraries(mavlink-gs-core
   PUBLIC  mavlink asio::asio ftxui::dom
-  PRIVATE spdlog::spdlog)
+  PRIVATE spdlog::spdlog yaml-cpp::yaml-cpp)
 
 # --- Executable: a thin main() over the core library -------------------------
 # Nothing links an executable, so every dependency here is PRIVATE.
@@ -75,7 +76,6 @@ target_link_libraries(mavlink-gs PRIVATE
   mavlink-gs-core
   CLI11::CLI11
   spdlog::spdlog
-  yaml-cpp::yaml-cpp
   ftxui::component)  # pulls in ftxui::dom and ftxui::screen transitively
 
 # --- Tests -------------------------------------------------------------------
@@ -90,7 +90,8 @@ add_executable(mavlink-gs-tests
   tests/test_command_link.cpp
   tests/test_waker.cpp
   tests/test_command_tracker.cpp
-  tests/test_flight_log.cpp)
+  tests/test_flight_log.cpp
+  tests/test_mission.cpp)
 # Catch2WithMain provides Catch2's own main(), so tests need no main.cpp.
 target_link_libraries(mavlink-gs-tests PRIVATE
   mavlink-gs-core
