@@ -1,4 +1,5 @@
-# A 40 m box around PX4 SITL's default home (Zurich: 47.397742 N, 8.545594 E).
+# A 40 m box beside PX4 SITL's default home in Zurich (about 47.398 N, 8.546 E;
+# the exact point varies by PX4 image). Flown end to end against PX4 SITL.
 # Altitudes are metres above home. Upload with [u], arm with [a], fly with [s].
 #
 #   mavlink-gs --mission missions/demo-square.yaml
