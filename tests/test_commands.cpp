@@ -58,6 +58,13 @@ TEST_CASE("rtl_command issues return-to-launch", "[commands]") {
   CHECK(c.command == MAV_CMD_NAV_RETURN_TO_LAUNCH);
 }
 
+TEST_CASE("mission_start_command runs the whole mission", "[commands]") {
+  const auto c = decode(mgs::mission_start_command(1, 1));
+  CHECK(c.command == MAV_CMD_MISSION_START);
+  CHECK_THAT(c.param1, WithinAbs(0.0, 1e-6));  // first item
+  CHECK_THAT(c.param2, WithinAbs(0.0, 1e-6));  // last item (0 = through end)
+}
+
 TEST_CASE("built commands carry our GCS identity as the source", "[commands]") {
   const auto msg = mgs::arm_command(1, 1, true);
   CHECK(msg.sysid == 255);                        // conventional GCS system id

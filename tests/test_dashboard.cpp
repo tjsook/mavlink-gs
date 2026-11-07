@@ -91,3 +91,49 @@ TEST_CASE("dashboard shows the recording indicator", "[ui]") {
     CHECK(out.find("LOG FAIL") != std::string::npos);
   }
 }
+
+TEST_CASE("dashboard shows mission upload progress", "[ui]") {
+  mgs::VehicleState state;
+
+  SECTION("none yet") {
+    const std::string out = render_to_text(mgs::render_dashboard(state, true));
+    CHECK(out.find("Mission") != std::string::npos);
+    CHECK(out.find("no mission uploaded") != std::string::npos);
+  }
+  SECTION("uploading: items pulled so far") {
+    state.mission_status = mgs::MissionStatus::Uploading;
+    state.mission_count = 5;
+    state.mission_sent = 2;
+    const std::string out = render_to_text(mgs::render_dashboard(state, true));
+    CHECK(out.find("2/5") != std::string::npos);
+  }
+  SECTION("uploaded") {
+    state.mission_status = mgs::MissionStatus::Uploaded;
+    state.mission_count = 5;
+    const std::string out = render_to_text(mgs::render_dashboard(state, true));
+    CHECK(out.find("5 items") != std::string::npos);
+  }
+  SECTION("rejected: the vehicle's reason in words") {
+    state.mission_status = mgs::MissionStatus::Rejected;
+    state.mission_error = MAV_MISSION_NO_SPACE;
+    const std::string out = render_to_text(mgs::render_dashboard(state, true));
+    CHECK(out.find("too many items") != std::string::npos);
+  }
+  SECTION("rejected mid-upload: names the refused item") {
+    state.mission_status = mgs::MissionStatus::Rejected;
+    state.mission_count = 5;
+    state.mission_sent = 5;
+    state.mission_error = MAV_MISSION_INVALID_PARAM5_X;
+    const std::string out = render_to_text(mgs::render_dashboard(state, true));
+    CHECK(out.find("item 5: invalid item") != std::string::npos);
+  }
+}
+
+TEST_CASE("an 80-column screen fits the hints and a long status", "[ui]") {
+  mgs::VehicleState state;
+  state.last_command_status = mgs::CommandStatus::Accepted;
+  state.last_command_id = MAV_CMD_MISSION_START;
+  const std::string out = render_to_text(mgs::render_dashboard(state, true));
+  CHECK(out.find("[u]pload") != std::string::npos);
+  CHECK(out.find("MISSION START accepted") != std::string::npos);
+}

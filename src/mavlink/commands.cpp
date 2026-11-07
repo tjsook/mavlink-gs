@@ -5,11 +5,6 @@
 namespace mgs {
 namespace {
 
-// Our identity on the MAVLink network. 255 is the conventional ground-station
-// system id; 190 (MAV_COMP_ID_MISSIONPLANNER) marks us as a GCS component.
-constexpr std::uint8_t kGcsSystemId = 255;
-constexpr std::uint8_t kGcsComponentId = MAV_COMP_ID_MISSIONPLANNER;
-
 // "Use the current value" sentinel for COMMAND_LONG float params. NaN tells the
 // autopilot to keep its present yaw / position rather than slew to 0.
 const float kCurrent = NAN;
@@ -61,6 +56,17 @@ mavlink_message_t rtl_command(std::uint8_t target_system,
       kGcsSystemId, kGcsComponentId, &msg, target_system, target_component,
       MAV_CMD_NAV_RETURN_TO_LAUNCH, /*confirmation=*/0, 0.0f, 0.0f, 0.0f, 0.0f,
       0.0f, 0.0f, 0.0f);
+  return msg;
+}
+
+mavlink_message_t mission_start_command(std::uint8_t target_system,
+                                        std::uint8_t target_component) {
+  mavlink_message_t msg;
+  mavlink_msg_command_long_pack(
+      kGcsSystemId, kGcsComponentId, &msg, target_system, target_component,
+      MAV_CMD_MISSION_START, /*confirmation=*/0,
+      /*param1 first item=*/0.0f, /*param2 last item=*/0.0f,  // 0,0 = all
+      0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
   return msg;
 }
 
