@@ -15,6 +15,14 @@ namespace mgs {
 //   TimedOut  — no acknowledgement after the retry budget ran out
 enum class CommandStatus { None, Pending, Accepted, Rejected, TimedOut };
 
+// Progress of the most recent mission upload, for the UI to display.
+//   None      — no upload this session
+//   Uploading — the vehicle is pulling items from us
+//   Uploaded  — the vehicle acknowledged the whole mission (MAV_MISSION_ACCEPTED)
+//   Rejected  — the vehicle refused it (see mission_error for the reason)
+//   TimedOut  — the vehicle went quiet mid-upload and retries ran out
+enum class MissionStatus { None, Uploading, Uploaded, Rejected, TimedOut };
+
 // State of the flight-log recorder, for the UI to display.
 //   Off       — no log file open this session (e.g. --no-log)
 //   Recording — a file is open and healthy
@@ -65,6 +73,12 @@ struct VehicleState {
   // --- Last command issued (published by the network thread) --------------
   CommandStatus last_command_status = CommandStatus::None;
   std::uint16_t last_command_id     = 0;  // which MAV_CMD it was
+
+  // --- Mission upload (published by the network thread) ------------------
+  MissionStatus mission_status = MissionStatus::None;
+  std::uint16_t mission_count  = 0;  // items in the mission being uploaded
+  std::uint16_t mission_sent   = 0;  // items the vehicle has pulled so far
+  std::uint8_t  mission_error  = 0;  // MAV_MISSION_RESULT when Rejected
 
   // --- Flight-log recorder status (published by the network thread) -------
   LogStatus log_status = LogStatus::Off;

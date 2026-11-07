@@ -46,6 +46,7 @@ add_library(mavlink-gs-core
   src/mavlink/format.cpp
   src/mavlink/commands.cpp
   src/mavlink/command_tracker.cpp
+  src/mavlink/mission_uploader.cpp
   src/mission/mission.cpp
   src/log/flight_log.cpp
   src/state/vehicle_state.cpp
@@ -91,7 +92,8 @@ add_executable(mavlink-gs-tests
   tests/test_waker.cpp
   tests/test_command_tracker.cpp
   tests/test_flight_log.cpp
-  tests/test_mission.cpp)
+  tests/test_mission.cpp
+  tests/test_mission_uploader.cpp)
 # Catch2WithMain provides Catch2's own main(), so tests need no main.cpp.
 target_link_libraries(mavlink-gs-tests PRIVATE
   mavlink-gs-core
