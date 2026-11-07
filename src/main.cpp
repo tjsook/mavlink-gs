@@ -18,6 +18,8 @@
 #include "mavlink/command_tracker.hpp"
 #include "mavlink/commands.hpp"
 #include "mavlink/decoder.hpp"
+#include "mavlink/mission_uploader.hpp"
+#include "mission/mission.hpp"
 #include "net/command_queue.hpp"
 #include "net/udp_link.hpp"
 #include "net/waker.hpp"
@@ -50,11 +52,13 @@ constexpr auto kHeartbeatPeriod = 1s;
 constexpr float kTakeoffHeightM = 2.5f;
 
 // The commands the palette can issue.
-enum class Cmd { Arm, Disarm, Takeoff, Land, Rtl };
+enum class Cmd { Arm, Disarm, Takeoff, Land, Rtl, Upload, Start };
 
-// Dangerous commands get a y/n confirmation; the rest fire immediately.
+// Dangerous commands get a y/n confirmation; the rest fire immediately. Upload
+// only stores the mission on the vehicle; Start is what makes it fly.
 bool needs_confirm(Cmd c) {
-  return c == Cmd::Arm || c == Cmd::Takeoff || c == Cmd::Rtl;
+  return c == Cmd::Arm || c == Cmd::Takeoff || c == Cmd::Rtl ||
+         c == Cmd::Start;
 }
 
 const char* cmd_name(Cmd c) {
@@ -64,9 +68,19 @@ const char* cmd_name(Cmd c) {
     case Cmd::Takeoff: return "TAKEOFF";
     case Cmd::Land: return "LAND";
     case Cmd::Rtl: return "RTL";
+    case Cmd::Upload: return "UPLOAD MISSION";
+    case Cmd::Start: return "START MISSION";
   }
   return "";
 }
+
+// A mission the UI hands to the network thread to upload: positions already
+// resolved against the vehicle, and the vehicle's address to send it to.
+struct UploadRequest {
+  mgs::Mission mission;
+  std::uint8_t target_system = 0;
+  std::uint8_t target_component = 0;
+};
 
 // Extract the port from a "udp://host:port" string; fall back on any failure.
 std::uint16_t parse_port(const std::string& url, std::uint16_t fallback) {
@@ -96,7 +110,24 @@ int main(int argc, char** argv) {
   bool no_log = false;
   app.add_flag("--no-log", no_log, "Disable flight-log recording");
 
+  std::string mission_path;
+  app.add_option("--mission", mission_path,
+                 "YAML mission file to upload with the [u] key");
+
   CLI11_PARSE(app, argc, argv);
+
+  // Load and validate the mission now, before the TUI, so a typo in the YAML is
+  // reported plainly and we exit — not discovered mid-flight on a keypress.
+  std::optional<mgs::Mission> mission;
+  if (!mission_path.empty()) {
+    try {
+      mission = mgs::load_mission(mission_path);
+    } catch (const mgs::MissionError& e) {
+      spdlog::error("bad mission: {}", e.what());
+      return 1;
+    }
+    spdlog::info("loaded mission {} ({} items)", mission_path, mission->size());
+  }
 
   const std::uint16_t port = parse_port(connection, 14550);
 
@@ -127,6 +158,7 @@ int main(int argc, char** argv) {
   mgs::SharedState shared;
   mgs::Waker wake;  // knocks the network thread out of poll()
   mgs::CommandQueue commands(wake);  // UI thread pushes; network thread sends
+  mgs::HandoffQueue<UploadRequest> uploads(wake);  // same, for whole missions
   std::atomic<bool> stop{false};
   std::string net_error;  // read only after network.join() (see below)
 
@@ -139,6 +171,9 @@ int main(int argc, char** argv) {
     mgs::CommandTracker tracker;     // one in-flight command at a time
     mavlink_message_t in_flight{};   // the message to resend on retry
     mgs::CommandStatus published = mgs::CommandStatus::None;
+    mgs::MissionUploader uploader;   // one mission upload at a time
+    mgs::MissionStatus mission_published = mgs::MissionStatus::None;
+    std::uint16_t mission_sent_published = 0;
     mgs::LogStatus log_published = mgs::LogStatus::Off;
     auto last_flush = std::chrono::steady_clock::now();
     // Back-date so the first heartbeat goes out as soon as we know the vehicle.
@@ -149,6 +184,14 @@ int main(int argc, char** argv) {
     // loop uses for timeouts: a .tlog means nothing to QGroundControl unless its
     // times are real "since 1970" times. Two clocks, two jobs.
     const auto log_now = [] { return std::chrono::system_clock::now(); };
+
+    // Every outgoing message goes through here: send it, and record it in the
+    // flight log if the send worked. Returns whether it was sent.
+    const auto send = [&](const mavlink_message_t& msg) {
+      if (!link->send(msg)) return false;
+      if (log) log->record(msg, log_now());
+      return true;
+    };
 
     try {
       while (!stop) {
@@ -167,6 +210,8 @@ int main(int argc, char** argv) {
               mavlink_msg_command_ack_decode(&msg, &ack);
               tracker.on_ack(ack);  // resolve/accept/reject the in-flight cmd
             }
+            // Mid-upload, the vehicle asks for items one by one; answer each.
+            if (const auto reply = uploader.on_message(msg, now)) send(*reply);
           }
         }
 
@@ -179,26 +224,31 @@ int main(int argc, char** argv) {
         // Send commands the UI queued since the last pass. Drained here, on the
         // socket-owning thread, so the UI thread never touches the socket.
         for (const auto& cmd : commands.drain()) {
-          if (link->send(cmd)) {
+          if (send(cmd)) {
             mavlink_command_long_t cl;
             mavlink_msg_command_long_decode(&cmd, &cl);
             tracker.begin(cl.command, now);  // count this send as attempt 1
             in_flight = cmd;
-            if (log) log->record(cmd, log_now());  // record what we sent, too
           }
         }
 
-        // Retransmit the in-flight command if its ack is overdue.
-        if (tracker.should_resend(now)) {
-          if (link->send(in_flight) && log) log->record(in_flight, log_now());
+        // Start any mission upload the UI asked for. The first message is the
+        // item count; the vehicle pulls the items after that (see above).
+        for (const auto& up : uploads.drain()) {
+          send(uploader.begin(up.mission, up.target_system,
+                              up.target_component, now));
         }
+
+        // Retransmit the in-flight command, or the stalled upload step, if the
+        // vehicle has gone quiet on it.
+        if (tracker.should_resend(now)) send(in_flight);
+        if (const auto again = uploader.retransmit(now)) send(*again);
 
         // Announce ourselves as a GCS about once a second. send() is a no-op
         // until the first datagram tells us the vehicle's address, so these
         // start flowing as soon as telemetry arrives.
         if (now - last_heartbeat_sent >= kHeartbeatPeriod) {
-          const auto hb = mgs::gcs_heartbeat();
-          if (link->send(hb) && log) log->record(hb, log_now());
+          send(mgs::gcs_heartbeat());
           last_heartbeat_sent = now;
         }
 
@@ -216,6 +266,19 @@ int main(int argc, char** argv) {
           shared.modify([&](mgs::VehicleState& s) {
             s.last_command_status = published;
             s.last_command_id = id;
+          });
+        }
+
+        // Publish mission upload progress only when it changes.
+        if (uploader.status() != mission_published ||
+            uploader.sent() != mission_sent_published) {
+          mission_published = uploader.status();
+          mission_sent_published = uploader.sent();
+          shared.modify([&](mgs::VehicleState& s) {
+            s.mission_status = uploader.status();
+            s.mission_count = uploader.count();
+            s.mission_sent = uploader.sent();
+            s.mission_error = uploader.error();
           });
         }
 
@@ -274,6 +337,23 @@ int main(int argc, char** argv) {
       case Cmd::Rtl:
         commands.push(mgs::rtl_command(ts, tc));
         break;
+      case Cmd::Upload:
+        if (!mission) {
+          note = "no mission loaded — start with --mission FILE";
+          return;
+        }
+        // Takeoff/land items may lack a position; they need ours to fill in.
+        if (!snap.has_position) {
+          note = "no position fix — cannot place the mission";
+          return;
+        }
+        uploads.push({mgs::resolve_positions(*mission, snap.latitude_deg,
+                                             snap.longitude_deg),
+                      ts, tc});
+        break;
+      case Cmd::Start:
+        commands.push(mgs::mission_start_command(ts, tc));
+        break;
     }
     note.clear();
   };
@@ -318,6 +398,8 @@ int main(int argc, char** argv) {
     else if (e == ftxui::Event::Character('t')) chosen = Cmd::Takeoff;
     else if (e == ftxui::Event::Character('l')) chosen = Cmd::Land;
     else if (e == ftxui::Event::Character('r')) chosen = Cmd::Rtl;
+    else if (e == ftxui::Event::Character('u')) chosen = Cmd::Upload;
+    else if (e == ftxui::Event::Character('s')) chosen = Cmd::Start;
 
     if (!chosen) return false;
     if (needs_confirm(*chosen)) {

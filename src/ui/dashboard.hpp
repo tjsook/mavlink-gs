@@ -15,7 +15,7 @@ namespace mgs {
 // from heartbeat freshness (see main) and passed in, so this function stays
 // testable with plain values.
 //
-// `confirm_prompt`, when non-empty, replaces the command hint bar with a
+// `confirm_prompt`, when non-empty, replaces the command key hints with a
 // highlighted confirmation question (e.g. "TAKEOFF? confirm (y/n)"). `note` is
 // a transient one-line message (e.g. "no vehicle yet"). Both default to empty
 // so telemetry-only callers and tests need not supply them.
