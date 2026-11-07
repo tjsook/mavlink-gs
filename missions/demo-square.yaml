@@ -1,0 +1,10 @@
+# A 40 m box around PX4 SITL's default home (Zurich: 47.397742 N, 8.545594 E).
+# Altitudes are metres above home. Upload with [u], arm with [a], fly with [s].
+#
+#   mavlink-gs --mission missions/demo-square.yaml
+items:
+  - { type: takeoff, alt: 15 }                                 # lift off where it sits
+  - { type: waypoint, lat: 47.398102, lon: 8.545594, alt: 20 } # 40 m north
+  - { type: waypoint, lat: 47.398102, lon: 8.546124, alt: 20, hold: 3 }  # NE corner, pause 3 s
+  - { type: waypoint, lat: 47.397742, lon: 8.546124, alt: 20 } # 40 m east of home
+  - { type: rtl }                                              # fly home and land
