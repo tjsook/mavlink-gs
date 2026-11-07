@@ -86,6 +86,8 @@ TEST_CASE("a full upload: requests answered in order, then accepted",
 
   const auto rtl = as_item(*up.on_message(request(2), t0 + 30ms));
   CHECK(rtl.command == MAV_CMD_NAV_RETURN_TO_LAUNCH);
+  // No position, so no global frame: PX4 rejects RTL with x=0 in one.
+  CHECK(rtl.frame == MAV_FRAME_MISSION);
   CHECK(up.sent() == 3);
 
   CHECK_FALSE(up.on_message(mission_ack(MAV_MISSION_ACCEPTED), t0 + 40ms));

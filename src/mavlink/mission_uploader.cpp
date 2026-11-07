@@ -23,6 +23,10 @@ mavlink_message_t to_message(const MissionItem& item, std::uint16_t seq,
   float p1 = 0.0f;
   float p4 = kCurrentYaw;
   float z = item.alt_m;
+  // Positional steps use the relative-altitude global frame. A step with no
+  // position (RTL) must say MAV_FRAME_MISSION, "x/y/z unused": in a global
+  // frame PX4 reads x=0 as a latitude and refuses it (INVALID_PARAM5_X).
+  std::uint8_t frame = MAV_FRAME_GLOBAL_RELATIVE_ALT;
   switch (item.kind) {
     case MissionItemKind::Takeoff:
       command = MAV_CMD_NAV_TAKEOFF;  // p1 = min pitch (0: autopilot default)
@@ -37,6 +41,7 @@ mavlink_message_t to_message(const MissionItem& item, std::uint16_t seq,
       break;
     case MissionItemKind::Rtl:
       command = MAV_CMD_NAV_RETURN_TO_LAUNCH;
+      frame = MAV_FRAME_MISSION;
       p4 = 0.0f;
       z = 0.0f;
       break;
@@ -44,7 +49,7 @@ mavlink_message_t to_message(const MissionItem& item, std::uint16_t seq,
   mavlink_message_t msg;
   mavlink_msg_mission_item_int_pack(
       kGcsSystemId, kGcsComponentId, &msg, ts, tc, seq,
-      MAV_FRAME_GLOBAL_RELATIVE_ALT, command, /*current=*/0,
+      frame, command, /*current=*/0,
       /*autocontinue=*/1, p1, /*p2=*/0.0f, /*p3=*/0.0f, p4,
       to_e7(item.lat_deg), to_e7(item.lon_deg), z, MAV_MISSION_TYPE_MISSION);
   return msg;

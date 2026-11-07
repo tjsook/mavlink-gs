@@ -84,9 +84,16 @@ Elements mission_rows(const VehicleState& s) {
     case MissionStatus::Uploaded:
       return {field("Upload", fmt::format("{} items", s.mission_count)) |
               color(Color::Green)};
-    case MissionStatus::Rejected:
-      return {field("Rejected", mission_error_label(s.mission_error)) |
+    case MissionStatus::Rejected: {
+      // mission_sent is the last item the vehicle asked for — the one it then
+      // refused — and, being 1-based, matches the item number in the YAML.
+      const auto why = mission_error_label(s.mission_error);
+      return {field("Rejected", s.mission_sent
+                                    ? fmt::format("item {}: {}",
+                                                  s.mission_sent, why)
+                                    : why) |
               color(Color::Red)};
+    }
     case MissionStatus::TimedOut:
       return {field("Timed out", progress) | color(Color::Red)};
     case MissionStatus::None:
