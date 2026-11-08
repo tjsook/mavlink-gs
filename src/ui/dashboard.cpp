@@ -12,6 +12,10 @@ using namespace ftxui;
 
 namespace {
 
+// Most mission steps the panel lists at once. A longer mission scrolls so the
+// step being flown stays in view.
+constexpr int kMaxMissionRows = 6;
+
 // One "Label ............ value" row: label dim on the left, value bold on the
 // right, filler() pushing them apart.
 Element field(const std::string& label, const std::string& value) {
@@ -69,8 +73,85 @@ std::string mission_error_label(std::uint8_t result) {
   }
 }
 
-// The Mission panel body: one status line, plus a gauge while uploading.
-Elements mission_rows(const VehicleState& s) {
+// Short name for a downloaded step's MAV_CMD. Any command we do not name
+// (another GCS may have uploaded it) still gets a row, by number.
+std::string mission_command_label(std::uint16_t command) {
+  switch (command) {
+    case MAV_CMD_NAV_TAKEOFF: return "TAKEOFF";
+    case MAV_CMD_NAV_WAYPOINT: return "WAYPOINT";
+    case MAV_CMD_NAV_LAND: return "LAND";
+    case MAV_CMD_NAV_RETURN_TO_LAUNCH: return "RTL";
+    case MAV_CMD_NAV_LOITER_UNLIM:
+    case MAV_CMD_NAV_LOITER_TURNS:
+    case MAV_CMD_NAV_LOITER_TIME:
+    case MAV_CMD_NAV_LOITER_TO_ALT: return "LOITER";
+    case MAV_CMD_DO_CHANGE_SPEED: return "SPEED";
+    default: return fmt::format("CMD {}", command);
+  }
+}
+
+// A step's target altitude, if it has one, marked by what it is measured
+// from: plain metres are above home, the common case.
+std::string mission_alt_label(const VehicleMissionItem& item) {
+  const bool has_alt = item.command == MAV_CMD_NAV_TAKEOFF ||
+                       (item.lat_deg && item.command != MAV_CMD_NAV_LAND);
+  if (!has_alt) return "";
+  switch (item.frame) {
+    case MAV_FRAME_GLOBAL:
+    case MAV_FRAME_GLOBAL_INT: return fmt::format("{:.0f} m MSL", item.alt_m);
+    case MAV_FRAME_GLOBAL_TERRAIN_ALT:
+    case MAV_FRAME_GLOBAL_TERRAIN_ALT_INT:
+      return fmt::format("{:.0f} m AGL", item.alt_m);
+    default: return fmt::format("{:.0f} m", item.alt_m);
+  }
+}
+
+// The steps the vehicle holds, numbered from 1 like the YAML. The one it is
+// flying is marked and focused, so the frame scrolls to keep it in view.
+Element mission_list(const VehicleState& s) {
+  Elements rows;
+  for (std::size_t i = 0; i < s.vehicle_mission.size(); ++i) {
+    const auto& item = s.vehicle_mission[i];
+    const bool current = static_cast<int>(i) == s.mission_current;
+    Element row = hbox({
+        text(current ? "▶" : " "),
+        text(fmt::format("{:>3} ", i + 1)) | dim,
+        text(mission_command_label(item.command)),
+        filler(),
+        text(mission_alt_label(item)),
+    });
+    rows.push_back(current ? row | bold | color(Color::Cyan) | focus : row);
+  }
+  return vbox(std::move(rows)) | vscroll_indicator | yframe |
+         size(HEIGHT, LESS_THAN, kMaxMissionRows);
+}
+
+// The mission the vehicle holds: fetch progress, or the list once we have it.
+Elements download_rows(const VehicleState& s) {
+  switch (s.download_status) {
+    case DownloadStatus::Downloading: {
+      const float done =
+          s.download_count ? static_cast<float>(s.download_received) /
+                                 static_cast<float>(s.download_count)
+                           : 0.0f;
+      return {field("Fetch", fmt::format("{}/{}", s.download_received,
+                                         s.download_count)) |
+                  color(Color::Yellow),
+              gauge(done) | color(Color::Yellow)};
+    }
+    case DownloadStatus::Downloaded:
+      if (s.vehicle_mission.empty()) return {text("vehicle has no mission") | dim};
+      return {mission_list(s)};
+    case DownloadStatus::TimedOut:
+      return {field("Fetch", "timed out") | color(Color::Red)};
+    case DownloadStatus::None:
+    default:
+      return {};
+  }
+}
+
+// The upload status line: progress while uploading, then the outcome.
+Elements upload_rows(const VehicleState& s) {
   const auto progress = fmt::format("{}/{}", s.mission_sent, s.mission_count);
   switch (s.mission_status) {
     case MissionStatus::Uploading: {
@@ -98,8 +179,16 @@ Elements mission_rows(const VehicleState& s) {
       return {field("Timed out", progress) | color(Color::Red)};
     case MissionStatus::None:
     default:
-      return {text("no mission uploaded") | dim};
+      return {};
   }
+}
+
+// The Mission panel body: the last upload's status over the vehicle's mission.
+Elements mission_rows(const VehicleState& s) {
+  Elements rows = upload_rows(s);
+  for (auto& row : download_rows(s)) rows.push_back(std::move(row));
+  if (rows.empty()) rows.push_back(text("no mission yet") | dim);
+  return rows;
 }
 
 // The right-hand status chip: outcome of the last command, colored by result.
@@ -183,7 +272,7 @@ Element render_dashboard(const VehicleState& s, bool connected,
           ? text(" " + confirm_prompt + " ") | bold | color(Color::Black) |
                 bgcolor(Color::Yellow)
           : text("[a]rm [d]isarm [t]akeoff [l]and [r]tl [u]pload [s]tart "
-                 "[q]uit") |
+                 "[f]etch [q]uit") |
                 dim;
   Element status = !note.empty() ? text(note) | color(Color::Red)
                                  : command_status(s);

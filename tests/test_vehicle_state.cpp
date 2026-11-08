@@ -99,6 +99,18 @@ TEST_CASE("attitude is converted from radians to degrees", "[state]") {
   CHECK_THAT(state.yaw_deg, WithinAbs(-45.0, 1e-3));
 }
 
+TEST_CASE("MISSION_CURRENT records the step being flown", "[state]") {
+  mgs::VehicleState state;
+  CHECK(state.mission_current == -1);  // unknown until reported
+
+  mavlink_message_t msg;
+  mavlink_msg_mission_current_pack(1, 1, &msg, /*seq=*/2, /*total=*/5,
+                                   MISSION_STATE_ACTIVE, 0, 0, 0, 0);
+  mgs::update(state, msg, kNow);
+
+  CHECK(state.mission_current == 2);
+}
+
 TEST_CASE("an untracked message leaves the snapshot unchanged", "[state]") {
   mgs::VehicleState state;
   mavlink_message_t msg;
