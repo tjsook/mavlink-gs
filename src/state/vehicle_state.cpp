@@ -48,6 +48,12 @@ void update(VehicleState& state, const mavlink_message_t& msg,
       state.yaw_deg = a.yaw * kRadToDeg;
       break;
     }
+    case MAVLINK_MSG_ID_MISSION_CURRENT: {
+      mavlink_mission_current_t c;
+      mavlink_msg_mission_current_decode(&msg, &c);
+      state.mission_current = c.seq;
+      break;
+    }
     default:
       break;  // a message type we don't track; leave the snapshot unchanged
   }
