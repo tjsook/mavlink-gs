@@ -18,6 +18,7 @@
 #include "mavlink/command_tracker.hpp"
 #include "mavlink/commands.hpp"
 #include "mavlink/decoder.hpp"
+#include "mavlink/mission_downloader.hpp"
 #include "mavlink/mission_uploader.hpp"
 #include "mission/mission.hpp"
 #include "net/command_queue.hpp"
@@ -52,7 +53,7 @@ constexpr auto kHeartbeatPeriod = 1s;
 constexpr float kTakeoffHeightM = 2.5f;
 
 // The commands the palette can issue.
-enum class Cmd { Arm, Disarm, Takeoff, Land, Rtl, Upload, Start };
+enum class Cmd { Arm, Disarm, Takeoff, Land, Rtl, Upload, Start, Fetch };
 
 // Dangerous commands get a y/n confirmation; the rest fire immediately. Upload
 // only stores the mission on the vehicle; Start is what makes it fly.
@@ -70,6 +71,7 @@ const char* cmd_name(Cmd c) {
     case Cmd::Rtl: return "RTL";
     case Cmd::Upload: return "UPLOAD MISSION";
     case Cmd::Start: return "START MISSION";
+    case Cmd::Fetch: return "FETCH MISSION";
   }
   return "";
 }
@@ -78,6 +80,12 @@ const char* cmd_name(Cmd c) {
 // resolved against the vehicle, and the vehicle's address to send it to.
 struct UploadRequest {
   mgs::Mission mission;
+  std::uint8_t target_system = 0;
+  std::uint8_t target_component = 0;
+};
+
+// A request to read back the mission the vehicle holds, and where to ask.
+struct FetchRequest {
   std::uint8_t target_system = 0;
   std::uint8_t target_component = 0;
 };
@@ -159,6 +167,7 @@ int main(int argc, char** argv) {
   mgs::Waker wake;  // knocks the network thread out of poll()
   mgs::CommandQueue commands(wake);  // UI thread pushes; network thread sends
   mgs::HandoffQueue<UploadRequest> uploads(wake);  // same, for whole missions
+  mgs::HandoffQueue<FetchRequest> fetches(wake);   // ...and mission read-backs
   std::atomic<bool> stop{false};
   std::string net_error;  // read only after network.join() (see below)
 
@@ -174,6 +183,14 @@ int main(int argc, char** argv) {
     mgs::MissionUploader uploader;   // one mission upload at a time
     mgs::MissionStatus mission_published = mgs::MissionStatus::None;
     std::uint16_t mission_sent_published = 0;
+    mgs::MissionDownloader downloader;  // one mission download at a time
+    mgs::DownloadStatus download_published = mgs::DownloadStatus::None;
+    std::uint16_t download_received_published = 0;
+    // The vehicle runs one mission transfer at a time (a second one is refused
+    // as "busy"), so requests wait here until the current transfer ends.
+    std::optional<UploadRequest> pending_upload;
+    std::optional<FetchRequest> pending_fetch;
+    bool fetched_on_connect = false;
     mgs::LogStatus log_published = mgs::LogStatus::Off;
     auto last_flush = std::chrono::steady_clock::now();
     // Back-date so the first heartbeat goes out as soon as we know the vehicle.
@@ -212,6 +229,14 @@ int main(int argc, char** argv) {
             }
             // Mid-upload, the vehicle asks for items one by one; answer each.
             if (const auto reply = uploader.on_message(msg, now)) send(*reply);
+            // Mid-download, each item it sends earns a request for the next.
+            if (const auto reply = downloader.on_message(msg, now)) send(*reply);
+            // Read the vehicle's mission as soon as we know who it is, so the
+            // panel shows what it will fly before anyone uploads anything.
+            if (msg.msgid == MAVLINK_MSG_ID_HEARTBEAT && !fetched_on_connect) {
+              pending_fetch = FetchRequest{msg.sysid, msg.compid};
+              fetched_on_connect = true;
+            }
           }
         }
 
@@ -232,17 +257,37 @@ int main(int argc, char** argv) {
           }
         }
 
-        // Start any mission upload the UI asked for. The first message is the
-        // item count; the vehicle pulls the items after that (see above).
-        for (const auto& up : uploads.drain()) {
-          send(uploader.begin(up.mission, up.target_system,
-                              up.target_component, now));
+        // Mission transfers the UI asked for. If it asked twice before we got
+        // to them, the latest request wins. An upload changes what the vehicle
+        // holds, so each one also queues a fetch to read the result back: the
+        // panel then shows the vehicle's copy, not ours.
+        for (auto& up : uploads.drain()) {
+          pending_fetch = FetchRequest{up.target_system, up.target_component};
+          pending_upload = std::move(up);
+        }
+        for (const auto& f : fetches.drain()) pending_fetch = f;
+
+        // Start the next transfer once none is running; uploads go first. The
+        // first message only opens it — the rest is driven from on_message().
+        const bool transfer_busy =
+            uploader.status() == mgs::MissionStatus::Uploading ||
+            downloader.status() == mgs::DownloadStatus::Downloading;
+        if (!transfer_busy && pending_upload) {
+          send(uploader.begin(pending_upload->mission,
+                              pending_upload->target_system,
+                              pending_upload->target_component, now));
+          pending_upload.reset();
+        } else if (!transfer_busy && pending_fetch) {
+          send(downloader.begin(pending_fetch->target_system,
+                                pending_fetch->target_component, now));
+          pending_fetch.reset();
         }
 
-        // Retransmit the in-flight command, or the stalled upload step, if the
-        // vehicle has gone quiet on it.
+        // Retransmit the in-flight command, or the stalled transfer step, if
+        // the vehicle has gone quiet on it.
         if (tracker.should_resend(now)) send(in_flight);
         if (const auto again = uploader.retransmit(now)) send(*again);
+        if (const auto again = downloader.retransmit(now)) send(*again);
 
         // Announce ourselves as a GCS about once a second. send() is a no-op
         // until the first datagram tells us the vehicle's address, so these
@@ -279,6 +324,22 @@ int main(int argc, char** argv) {
             s.mission_count = uploader.count();
             s.mission_sent = uploader.sent();
             s.mission_error = uploader.error();
+          });
+        }
+
+        // Publish download progress only when it changes. The item list is
+        // copied once, when complete — not on every item.
+        if (downloader.status() != download_published ||
+            downloader.received() != download_received_published) {
+          download_published = downloader.status();
+          download_received_published = downloader.received();
+          shared.modify([&](mgs::VehicleState& s) {
+            s.download_status = downloader.status();
+            s.download_count = downloader.count();
+            s.download_received = downloader.received();
+            if (downloader.status() == mgs::DownloadStatus::Downloaded) {
+              s.vehicle_mission = downloader.items();
+            }
           });
         }
 
@@ -354,6 +415,9 @@ int main(int argc, char** argv) {
       case Cmd::Start:
         commands.push(mgs::mission_start_command(ts, tc));
         break;
+      case Cmd::Fetch:
+        fetches.push({ts, tc});
+        break;
     }
     note.clear();
   };
@@ -400,6 +464,7 @@ int main(int argc, char** argv) {
     else if (e == ftxui::Event::Character('r')) chosen = Cmd::Rtl;
     else if (e == ftxui::Event::Character('u')) chosen = Cmd::Upload;
     else if (e == ftxui::Event::Character('s')) chosen = Cmd::Start;
+    else if (e == ftxui::Event::Character('f')) chosen = Cmd::Fetch;
 
     if (!chosen) return false;
     if (needs_confirm(*chosen)) {
