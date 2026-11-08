@@ -66,6 +66,9 @@ TEST_CASE("UdpLink::receive returns early when the Waker rings", "[net]") {
   ui.join();
 
   CHECK_FALSE(packet.has_value());  // woken, not handed a datagram
-  CHECK(waited < 150ms);            // well under the 250 ms poll timeout
+  // A timeout cannot return before the 250 ms poll timeout, so anything less
+  // proves the wake ended the wait. No tighter bound: a busy CI runner once
+  // took 156 ms to schedule the 20 ms sleeper and the wake.
+  CHECK(waited < 250ms);
   CHECK(commands.drain().size() == 1);
 }

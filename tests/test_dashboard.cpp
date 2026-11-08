@@ -1,3 +1,4 @@
+#include <regex>
 #include <string>
 
 #include <catch2/catch_test_macros.hpp>
@@ -10,7 +11,9 @@
 namespace {
 
 // Render an element to a fixed-size character grid and flatten to text so we
-// can assert on the content the user would see.
+// can assert on the content the user would see. ToString() wraps styled runs
+// (bold, dim, color) in ANSI escape codes; strip them, or "1 TAKEOFF" would
+// not match when the number is dim and the label is not.
 std::string render_to_text(const ftxui::Element& element) {
   auto screen = ftxui::Screen::Create(ftxui::Dimension::Fixed(80),
                                       ftxui::Dimension::Fixed(24));
@@ -18,7 +21,8 @@ std::string render_to_text(const ftxui::Element& element) {
   // stays const-correct at the call site.
   ftxui::Element copy = element;
   ftxui::Render(screen, copy);
-  return screen.ToString();
+  static const std::regex kAnsi("\x1b\\[[0-9;]*m");
+  return std::regex_replace(screen.ToString(), kAnsi, "");
 }
 
 }  // namespace
@@ -98,7 +102,7 @@ TEST_CASE("dashboard shows mission upload progress", "[ui]") {
   SECTION("none yet") {
     const std::string out = render_to_text(mgs::render_dashboard(state, true));
     CHECK(out.find("Mission") != std::string::npos);
-    CHECK(out.find("no mission uploaded") != std::string::npos);
+    CHECK(out.find("no mission yet") != std::string::npos);
   }
   SECTION("uploading: items pulled so far") {
     state.mission_status = mgs::MissionStatus::Uploading;
@@ -135,5 +139,76 @@ TEST_CASE("an 80-column screen fits the hints and a long status", "[ui]") {
   state.last_command_id = MAV_CMD_MISSION_START;
   const std::string out = render_to_text(mgs::render_dashboard(state, true));
   CHECK(out.find("[u]pload") != std::string::npos);
+  CHECK(out.find("[q]uit") != std::string::npos);  // the last hint, uncut
   CHECK(out.find("MISSION START accepted") != std::string::npos);
+}
+
+namespace {
+
+// A downloaded step: a waypoint at a place unless told otherwise.
+mgs::VehicleMissionItem step(std::uint16_t command = MAV_CMD_NAV_WAYPOINT,
+                             float alt = 20.0f) {
+  mgs::VehicleMissionItem item;
+  item.command = command;
+  item.frame = MAV_FRAME_GLOBAL_RELATIVE_ALT;
+  item.alt_m = alt;
+  if (command != MAV_CMD_NAV_RETURN_TO_LAUNCH) {
+    item.lat_deg = 47.398;
+    item.lon_deg = 8.546;
+  }
+  return item;
+}
+
+}  // namespace
+
+TEST_CASE("dashboard lists the vehicle's mission", "[ui]") {
+  mgs::VehicleState state;
+
+  SECTION("fetching: items received so far") {
+    state.download_status = mgs::DownloadStatus::Downloading;
+    state.download_count = 5;
+    state.download_received = 3;
+    const std::string out = render_to_text(mgs::render_dashboard(state, true));
+    CHECK(out.find("Fetch") != std::string::npos);
+    CHECK(out.find("3/5") != std::string::npos);
+  }
+  SECTION("fetched: each step, numbered from 1, the current one marked") {
+    state.download_status = mgs::DownloadStatus::Downloaded;
+    state.vehicle_mission = {step(MAV_CMD_NAV_TAKEOFF, 15.0f), step(),
+                             step(MAV_CMD_NAV_RETURN_TO_LAUNCH)};
+    state.mission_current = 1;  // 0-based: the waypoint
+    const std::string out = render_to_text(mgs::render_dashboard(state, true));
+    CHECK(out.find("1 TAKEOFF") != std::string::npos);
+    CHECK(out.find("15 m") != std::string::npos);
+    CHECK(out.find("▶  2 WAYPOINT") != std::string::npos);
+    CHECK(out.find("3 RTL") != std::string::npos);
+  }
+  SECTION("a command we do not name still gets a row") {
+    state.download_status = mgs::DownloadStatus::Downloaded;
+    state.vehicle_mission = {step(MAV_CMD_DO_SET_SERVO)};
+    const std::string out = render_to_text(mgs::render_dashboard(state, true));
+    CHECK(out.find("CMD 183") != std::string::npos);
+  }
+  SECTION("an empty mission says so") {
+    state.download_status = mgs::DownloadStatus::Downloaded;
+    const std::string out = render_to_text(mgs::render_dashboard(state, true));
+    CHECK(out.find("vehicle has no mission") != std::string::npos);
+  }
+  SECTION("a long mission scrolls to keep the current step in view") {
+    state.download_status = mgs::DownloadStatus::Downloaded;
+    state.vehicle_mission.assign(20, step());
+    state.mission_current = 17;  // step 18
+    const std::string out = render_to_text(mgs::render_dashboard(state, true));
+    CHECK(out.find("▶ 18 WAYPOINT") != std::string::npos);
+    CHECK(out.find("  1 WAYPOINT") == std::string::npos);  // scrolled off
+  }
+  SECTION("upload status and the fetched list share the panel") {
+    state.mission_status = mgs::MissionStatus::Uploaded;
+    state.mission_count = 1;
+    state.download_status = mgs::DownloadStatus::Downloaded;
+    state.vehicle_mission = {step()};
+    const std::string out = render_to_text(mgs::render_dashboard(state, true));
+    CHECK(out.find("1 items") != std::string::npos);
+    CHECK(out.find("1 WAYPOINT") != std::string::npos);
+  }
 }

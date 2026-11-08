@@ -2,6 +2,8 @@
 
 #include <chrono>
 #include <cstdint>
+#include <optional>
+#include <vector>
 
 #include <common/mavlink.h>
 
@@ -22,6 +24,26 @@ enum class CommandStatus { None, Pending, Accepted, Rejected, TimedOut };
 //   Rejected  — the vehicle refused it (see mission_error for the reason)
 //   TimedOut  — the vehicle went quiet mid-upload and retries ran out
 enum class MissionStatus { None, Uploading, Uploaded, Rejected, TimedOut };
+
+// Progress of the most recent mission download, for the UI to display.
+//   None        — not fetched yet this session
+//   Downloading — we are pulling items from the vehicle
+//   Downloaded  — we hold the vehicle's whole mission (see vehicle_mission)
+//   TimedOut    — the vehicle went quiet mid-download and retries ran out
+enum class DownloadStatus { None, Downloading, Downloaded, TimedOut };
+
+// One step of the mission stored on the vehicle, as downloaded from it.
+//
+// Not a MissionItem: that type is what a human may write in YAML (four kinds).
+// The vehicle can hold any MAV_CMD — one another ground station uploaded, say
+// a speed change — so we keep the raw command and only decode what we draw.
+struct VehicleMissionItem {
+  std::uint16_t command = 0;  // MAV_CMD_*
+  std::uint8_t frame = 0;     // MAV_FRAME_*: says how to read alt_m
+  std::optional<double> lat_deg;  // only for a step that flies to a place
+  std::optional<double> lon_deg;
+  float alt_m = 0.0f;
+};
 
 // State of the flight-log recorder, for the UI to display.
 //   Off       — no log file open this session (e.g. --no-log)
@@ -79,6 +101,15 @@ struct VehicleState {
   std::uint16_t mission_count  = 0;  // items in the mission being uploaded
   std::uint16_t mission_sent   = 0;  // items the vehicle has pulled so far
   std::uint8_t  mission_error  = 0;  // MAV_MISSION_RESULT when Rejected
+
+  // --- Mission on the vehicle (downloaded; published by the network thread)
+  DownloadStatus download_status   = DownloadStatus::None;
+  std::uint16_t  download_count    = 0;  // items the vehicle said it holds
+  std::uint16_t  download_received = 0;  // items we have so far
+  std::vector<VehicleMissionItem> vehicle_mission;  // set when Downloaded
+
+  // --- MISSION_CURRENT: the step the vehicle is flying (0-based) ----------
+  int mission_current = -1;  // -1 = not reported yet
 
   // --- Flight-log recorder status (published by the network thread) -------
   LogStatus log_status = LogStatus::Off;
