@@ -48,6 +48,14 @@ void update(VehicleState& state, const mavlink_message_t& msg,
       state.yaw_deg = a.yaw * kRadToDeg;
       break;
     }
+    case MAVLINK_MSG_ID_HOME_POSITION: {
+      mavlink_home_position_t h;
+      mavlink_msg_home_position_decode(&msg, &h);
+      state.home_lat_deg = h.latitude / 1e7;
+      state.home_lon_deg = h.longitude / 1e7;
+      state.has_home = true;
+      break;
+    }
     case MAVLINK_MSG_ID_MISSION_CURRENT: {
       mavlink_mission_current_t c;
       mavlink_msg_mission_current_decode(&msg, &c);

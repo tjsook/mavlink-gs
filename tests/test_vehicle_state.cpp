@@ -111,6 +111,21 @@ TEST_CASE("MISSION_CURRENT records the step being flown", "[state]") {
   CHECK(state.mission_current == 2);
 }
 
+TEST_CASE("HOME_POSITION records where RTL returns to", "[state]") {
+  mgs::VehicleState state;
+  CHECK_FALSE(state.has_home);
+
+  mavlink_message_t msg;
+  const float q[4] = {1, 0, 0, 0};
+  mavlink_msg_home_position_pack(1, 1, &msg, 473979714, 85461636, 225000,
+                                 0, 0, 0, q, 0, 0, 0, 0);
+  mgs::update(state, msg, kNow);
+
+  CHECK(state.has_home);
+  CHECK_THAT(state.home_lat_deg, WithinAbs(47.3979714, 1e-9));
+  CHECK_THAT(state.home_lon_deg, WithinAbs(8.5461636, 1e-9));
+}
+
 TEST_CASE("an untracked message leaves the snapshot unchanged", "[state]") {
   mgs::VehicleState state;
   mavlink_message_t msg;
