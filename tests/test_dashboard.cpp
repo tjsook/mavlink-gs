@@ -212,3 +212,46 @@ TEST_CASE("dashboard lists the vehicle's mission", "[ui]") {
     CHECK(out.find("1 WAYPOINT") != std::string::npos);
   }
 }
+
+TEST_CASE("the map draws home, the mission, and the vehicle's heading",
+          "[ui][map]") {
+  mgs::VehicleState state;
+
+  SECTION("nothing to place yet") {
+    const std::string out = render_to_text(mgs::render_dashboard(state, true));
+    CHECK(out.find("Map") != std::string::npos);
+  }
+
+  state.has_home = true;
+  state.home_lat_deg = 47.3979714;
+  state.home_lon_deg = 8.5461636;
+  state.has_position = true;
+  state.latitude_deg = 47.398102;
+  state.longitude_deg = 8.5459;
+  state.download_status = mgs::DownloadStatus::Downloaded;
+  state.vehicle_mission = {step(), step(MAV_CMD_NAV_RETURN_TO_LAUNCH)};
+
+  SECTION("home, north, a scale bar, and the vehicle as an arrow") {
+    state.yaw_deg = 90.0;  // east
+    const std::string out = render_to_text(mgs::render_dashboard(state, true));
+    CHECK(out.find("H") != std::string::npos);
+    CHECK(out.find("N│") != std::string::npos);  // top-right of the map
+    CHECK(out.find("→") != std::string::npos);
+  }
+  SECTION("the arrow follows the heading, wrapping past north") {
+    state.yaw_deg = -90.0;  // west, as MAVLink may report it
+    std::string out = render_to_text(mgs::render_dashboard(state, true));
+    CHECK(out.find("←") != std::string::npos);
+    state.yaw_deg = 359.0;
+    out = render_to_text(mgs::render_dashboard(state, true));
+    CHECK(out.find("↑") != std::string::npos);
+  }
+  SECTION("the trail is accepted and drawn without disturbing the rest") {
+    const std::vector<mgs::GeoPoint> trail{{47.39797, 8.54616},
+                                           {47.39805, 8.54590}};
+    const std::string out =
+        render_to_text(mgs::render_dashboard(state, true, "", "", trail));
+    CHECK(out.find("H") != std::string::npos);
+    CHECK(out.find("[q]uit") != std::string::npos);
+  }
+}

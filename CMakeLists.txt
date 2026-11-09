@@ -53,7 +53,8 @@ add_library(mavlink-gs-core
   src/map/trail.cpp
   src/log/flight_log.cpp
   src/state/vehicle_state.cpp
-  src/ui/dashboard.cpp)
+  src/ui/dashboard.cpp
+  src/ui/map_panel.cpp)
 
 # PUBLIC include dir: both this library's .cpp files and its consumers can
 # #include "core/...". PUBLIC because these headers are part of the lib's API.
