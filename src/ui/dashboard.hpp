@@ -1,9 +1,11 @@
 #pragma once
 
 #include <string>
+#include <vector>
 
 #include <ftxui/dom/elements.hpp>
 
+#include "map/geo.hpp"
 #include "state/vehicle_state.hpp"
 
 namespace mgs {
@@ -19,8 +21,12 @@ namespace mgs {
 // highlighted confirmation question (e.g. "TAKEOFF? confirm (y/n)"). `note` is
 // a transient one-line message (e.g. "no vehicle yet"). Both default to empty
 // so telemetry-only callers and tests need not supply them.
+//
+// `trail` is where the vehicle has been lately (oldest first), for the map.
+// The caller keeps it, since a snapshot holds only the latest position.
 ftxui::Element render_dashboard(const VehicleState& state, bool connected,
                                 const std::string& confirm_prompt = "",
-                                const std::string& note = "");
+                                const std::string& note = "",
+                                const std::vector<GeoPoint>& trail = {});
 
 }  // namespace mgs

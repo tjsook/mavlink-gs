@@ -15,6 +15,7 @@
 
 #include "core/version.hpp"
 #include "log/flight_log.hpp"
+#include "map/trail.hpp"
 #include "mavlink/command_tracker.hpp"
 #include "mavlink/commands.hpp"
 #include "mavlink/decoder.hpp"
@@ -366,6 +367,7 @@ int main(int argc, char** argv) {
   // UI-local command state. Only the UI thread touches these, so no lock.
   std::optional<Cmd> pending_confirm;  // a dangerous command awaiting y/n
   std::string note;                    // transient feedback (e.g. "no vehicle")
+  mgs::Trail trail;                    // recent positions, for the map
 
   // Build the chosen command from the latest snapshot and queue it for sending.
   // Refuses (with a note) if we can't address or safely issue it yet.
@@ -424,6 +426,12 @@ int main(int argc, char** argv) {
 
   auto view = ftxui::Renderer([&] {
     const mgs::VehicleState snap = shared.snapshot();
+    // Sample the trail from the snapshot we already took: the network thread
+    // needs no part in it. Trail skips samples where the vehicle sat still.
+    if (snap.has_position) {
+      trail.add({snap.latitude_deg, snap.longitude_deg},
+                std::chrono::steady_clock::now());
+    }
     const bool connected =
         snap.last_heartbeat != std::chrono::steady_clock::time_point{} &&
         std::chrono::steady_clock::now() - snap.last_heartbeat <
@@ -432,7 +440,7 @@ int main(int argc, char** argv) {
         pending_confirm
             ? std::string(cmd_name(*pending_confirm)) + "? confirm (y/n)"
             : "";
-    return mgs::render_dashboard(snap, connected, prompt, note);
+    return mgs::render_dashboard(snap, connected, prompt, note, trail.points());
   });
 
   auto root = ftxui::CatchEvent(view, [&](const ftxui::Event& e) {

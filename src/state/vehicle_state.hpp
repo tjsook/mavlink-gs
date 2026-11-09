@@ -87,6 +87,11 @@ struct VehicleState {
   double relative_alt_m = 0.0;          // above home
   bool   has_position   = false;        // false until the first fix arrives
 
+  // --- HOME_POSITION: where RTL returns to ------------------------------
+  double home_lat_deg = 0.0;
+  double home_lon_deg = 0.0;
+  bool   has_home     = false;  // false until the vehicle reports one
+
   // --- ATTITUDE: how it's oriented (degrees) -----------------------------
   double roll_deg  = 0.0;
   double pitch_deg = 0.0;

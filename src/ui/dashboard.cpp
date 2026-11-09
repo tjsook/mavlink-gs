@@ -6,11 +6,17 @@
 #include <ftxui/screen/color.hpp>
 #include <spdlog/fmt/fmt.h>
 
+#include "ui/map_panel.hpp"
+
 namespace mgs {
 
 using namespace ftxui;
 
 namespace {
+
+// Width of the left column (Attitude, Position, Power). The map takes the
+// rest of the row, so it gets whatever a wider terminal adds.
+constexpr int kLeftColumnWidth = 32;
 
 // Most mission steps the panel lists at once. A longer mission scrolls so the
 // step being flown stays in view.
@@ -216,7 +222,8 @@ Element command_status(const VehicleState& s) {
 
 Element render_dashboard(const VehicleState& s, bool connected,
                          const std::string& confirm_prompt,
-                         const std::string& note) {
+                         const std::string& note,
+                         const std::vector<GeoPoint>& trail) {
   // --- Header: program name, arm state, link state ------------------------
   Element link = connected
       ? text(" CONNECTED ") | color(Color::Black) | bgcolor(Color::Green)
@@ -262,6 +269,7 @@ Element render_dashboard(const VehicleState& s, bool connected,
   }
   Element power = panel("Power", std::move(power_rows));
   Element mission = panel("Mission", mission_rows(s));
+  Element map = panel("Map", {render_map(s, trail) | flex});
 
   // --- Command bar: key hints over the last outcome (or a note) ----------
   // Two lines, not one: the hints alone take most of an 80-column terminal, so
@@ -278,11 +286,16 @@ Element render_dashboard(const VehicleState& s, bool connected,
                                  : command_status(s);
   Element command_bar = vbox({hbox({hints, filler()}), hbox({status, filler()})});
 
+  // Telemetry down the left; the map over the mission list on the right. The
+  // body row is flex, so on a tall terminal the map grows and the command bar
+  // stays at the bottom.
+  Element left = vbox({attitude, position, power}) |
+                 size(WIDTH, EQUAL, kLeftColumnWidth);
+  Element right = vbox({map | flex, mission});
   return vbox({
       header,
       separator(),
-      hbox({attitude | flex, position | flex}),
-      hbox({power | flex, mission | flex}),
+      hbox({left, right | flex}) | flex,
       separator(),
       command_bar,
   }) | border;
