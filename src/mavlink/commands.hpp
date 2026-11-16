@@ -45,6 +45,13 @@ mavlink_message_t rtl_command(std::uint8_t target_system,
 mavlink_message_t mission_start_command(std::uint8_t target_system,
                                         std::uint8_t target_component);
 
+// MAV_CMD_DO_SET_MISSION_CURRENT: make mission item `seq` (0-based) the one
+// the vehicle flies next. Mid-mission it turns there at once; otherwise it is
+// where the mission picks up when started.
+mavlink_message_t set_mission_current_command(std::uint8_t target_system,
+                                              std::uint8_t target_component,
+                                              std::uint16_t seq);
+
 // HEARTBEAT announcing us as a ground control station. Not a command, but it
 // shares the GCS source identity. A GCS must send this at about 1 Hz; without
 // it the autopilot reports "no connection to the GCS" and refuses to arm.
