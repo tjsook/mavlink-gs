@@ -133,6 +133,21 @@ TEST_CASE("dashboard shows mission upload progress", "[ui]") {
   }
 }
 
+TEST_CASE("dashboard names a goto and shows its prompt", "[ui][goto]") {
+  mgs::VehicleState state;
+  state.last_command_status = mgs::CommandStatus::Accepted;
+  state.last_command_id = MAV_CMD_DO_SET_MISSION_CURRENT;
+  std::string out = render_to_text(mgs::render_dashboard(state, true));
+  CHECK(out.find("GOTO accepted") != std::string::npos);
+  CHECK(out.find("[g]oto") != std::string::npos);
+
+  out = render_to_text(mgs::render_dashboard(
+      state, true, "GOTO step: 4_  (Enter to send, Esc to cancel)",
+      "no step 9 (the mission has 1–5)"));
+  CHECK(out.find("GOTO step: 4_") != std::string::npos);
+  CHECK(out.find("no step 9") != std::string::npos);
+}
+
 TEST_CASE("an 80-column screen fits the hints and a long status", "[ui]") {
   mgs::VehicleState state;
   state.last_command_status = mgs::CommandStatus::Accepted;

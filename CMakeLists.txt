@@ -54,7 +54,8 @@ add_library(mavlink-gs-core
   src/log/flight_log.cpp
   src/state/vehicle_state.cpp
   src/ui/dashboard.cpp
-  src/ui/map_panel.cpp)
+  src/ui/map_panel.cpp
+  src/ui/step_entry.cpp)
 
 # PUBLIC include dir: both this library's .cpp files and its consumers can
 # #include "core/...". PUBLIC because these headers are part of the lib's API.
@@ -99,7 +100,8 @@ add_executable(mavlink-gs-tests
   tests/test_mission.cpp
   tests/test_mission_uploader.cpp
   tests/test_mission_downloader.cpp
-  tests/test_geo.cpp)
+  tests/test_geo.cpp
+  tests/test_step_entry.cpp)
 # Catch2WithMain provides Catch2's own main(), so tests need no main.cpp.
 target_link_libraries(mavlink-gs-tests PRIVATE
   mavlink-gs-core

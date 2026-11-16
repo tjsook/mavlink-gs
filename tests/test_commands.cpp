@@ -65,6 +65,14 @@ TEST_CASE("mission_start_command runs the whole mission", "[commands]") {
   CHECK_THAT(c.param2, WithinAbs(0.0, 1e-6));  // last item (0 = through end)
 }
 
+TEST_CASE("set_mission_current_command names the item to fly next",
+          "[commands]") {
+  const auto c = decode(mgs::set_mission_current_command(1, 1, /*seq=*/3));
+  CHECK(c.command == MAV_CMD_DO_SET_MISSION_CURRENT);
+  CHECK_THAT(c.param1, WithinAbs(3.0, 1e-6));  // 0-based item number
+  CHECK_THAT(c.param2, WithinAbs(0.0, 1e-6));  // do not reset the mission
+}
+
 TEST_CASE("built commands carry our GCS identity as the source", "[commands]") {
   const auto msg = mgs::arm_command(1, 1, true);
   CHECK(msg.sysid == 255);                        // conventional GCS system id

@@ -1,4 +1,5 @@
 #include <atomic>
+#include <cctype>
 #include <chrono>
 #include <cstdint>
 #include <exception>
@@ -28,6 +29,7 @@
 #include "state/shared_state.hpp"
 #include "state/vehicle_state.hpp"
 #include "ui/dashboard.hpp"
+#include "ui/step_entry.hpp"
 
 namespace {
 
@@ -366,6 +368,7 @@ int main(int argc, char** argv) {
 
   // UI-local command state. Only the UI thread touches these, so no lock.
   std::optional<Cmd> pending_confirm;  // a dangerous command awaiting y/n
+  std::optional<std::string> goto_entry;  // digits typed after [g], if open
   std::string note;                    // transient feedback (e.g. "no vehicle")
   mgs::Trail trail;                    // recent positions, for the map
 
@@ -436,14 +439,45 @@ int main(int argc, char** argv) {
         snap.last_heartbeat != std::chrono::steady_clock::time_point{} &&
         std::chrono::steady_clock::now() - snap.last_heartbeat <
             kHeartbeatTimeout;
-    const std::string prompt =
-        pending_confirm
-            ? std::string(cmd_name(*pending_confirm)) + "? confirm (y/n)"
-            : "";
+    std::string prompt;
+    if (pending_confirm) {
+      prompt = std::string(cmd_name(*pending_confirm)) + "? confirm (y/n)";
+    } else if (goto_entry) {
+      prompt = "GOTO step: " + *goto_entry + "_  (Enter to send, Esc to cancel)";
+    }
     return mgs::render_dashboard(snap, connected, prompt, note, trail.points());
   });
 
   auto root = ftxui::CatchEvent(view, [&](const ftxui::Event& e) {
+    // While typing a goto step, digits build the number and Enter sends it.
+    // Typing the number and pressing Enter is the confirmation; no y/n after.
+    if (goto_entry) {
+      if (e.is_character() && e.character().size() == 1 &&
+          std::isdigit(static_cast<unsigned char>(e.character()[0]))) {
+        if (goto_entry->size() < mgs::kMaxStepDigits) {
+          *goto_entry += e.character();
+        }
+      } else if (e == ftxui::Event::Backspace) {
+        if (!goto_entry->empty()) goto_entry->pop_back();
+      } else if (e == ftxui::Event::Return) {
+        const mgs::VehicleState snap = shared.snapshot();
+        const auto choice =
+            mgs::choose_step(*goto_entry, snap.vehicle_mission.size());
+        if (choice.seq) {
+          commands.push(mgs::set_mission_current_command(
+              snap.system_id, snap.component_id, *choice.seq));
+          goto_entry.reset();
+          note.clear();
+        } else {
+          note = choice.error;  // the prompt stays up, to fix the number
+        }
+      } else if (e == ftxui::Event::Escape) {
+        goto_entry.reset();
+        note = "cancelled";
+      }
+      return true;  // swallow all keys while the prompt is up
+    }
+
     // While confirming a dangerous command, y/n resolves it and nothing else.
     if (pending_confirm) {
       if (e == ftxui::Event::Character('y')) {
@@ -459,6 +493,18 @@ int main(int argc, char** argv) {
 
     if (e == ftxui::Event::Character('q') || e == ftxui::Event::Escape) {
       screen.Exit();
+      return true;
+    }
+
+    // Goto needs a step number first, so it opens its own prompt. It checks
+    // against the mission the vehicle holds (as fetched), not the YAML file.
+    if (e == ftxui::Event::Character('g')) {
+      if (shared.snapshot().vehicle_mission.empty()) {
+        note = "no mission on the vehicle — [u]pload or [f]etch first";
+      } else {
+        goto_entry.emplace();
+        note.clear();
+      }
       return true;
     }
 

@@ -41,6 +41,7 @@ std::string command_label(std::uint16_t command) {
     case MAV_CMD_NAV_LAND: return "LAND";
     case MAV_CMD_NAV_RETURN_TO_LAUNCH: return "RTL";
     case MAV_CMD_MISSION_START: return "MISSION START";
+    case MAV_CMD_DO_SET_MISSION_CURRENT: return "GOTO";
     default: return "COMMAND";
   }
 }
@@ -280,7 +281,7 @@ Element render_dashboard(const VehicleState& s, bool connected,
           ? text(" " + confirm_prompt + " ") | bold | color(Color::Black) |
                 bgcolor(Color::Yellow)
           : text("[a]rm [d]isarm [t]akeoff [l]and [r]tl [u]pload [s]tart "
-                 "[f]etch [q]uit") |
+                 "[g]oto [f]etch [q]uit") |
                 dim;
   Element status = !note.empty() ? text(note) | color(Color::Red)
                                  : command_status(s);

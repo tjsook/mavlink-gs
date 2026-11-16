@@ -70,6 +70,19 @@ mavlink_message_t mission_start_command(std::uint8_t target_system,
   return msg;
 }
 
+mavlink_message_t set_mission_current_command(std::uint8_t target_system,
+                                              std::uint8_t target_component,
+                                              std::uint16_t seq) {
+  mavlink_message_t msg;
+  mavlink_msg_command_long_pack(
+      kGcsSystemId, kGcsComponentId, &msg, target_system, target_component,
+      MAV_CMD_DO_SET_MISSION_CURRENT, /*confirmation=*/0,
+      /*param1 item=*/static_cast<float>(seq),
+      /*param2 reset mission=*/0.0f,  // 0: keep progress (jump counters etc.)
+      0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
+  return msg;
+}
+
 mavlink_message_t gcs_heartbeat() {
   mavlink_message_t msg;
   // MAV_TYPE_GCS + MAV_AUTOPILOT_INVALID is how a ground station identifies
