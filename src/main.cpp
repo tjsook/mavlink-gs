@@ -3,6 +3,8 @@
 #include <chrono>
 #include <cstdint>
 #include <exception>
+#include <filesystem>
+#include <fstream>
 #include <memory>
 #include <optional>
 #include <string>
@@ -15,6 +17,7 @@
 #include <spdlog/spdlog.h>
 
 #include "core/version.hpp"
+#include "log/csv_export.hpp"
 #include "log/flight_log.hpp"
 #include "map/trail.hpp"
 #include "mavlink/command_tracker.hpp"
@@ -93,6 +96,42 @@ struct FetchRequest {
   std::uint8_t target_component = 0;
 };
 
+// Write the telemetry CSV beside a .tlog and say where. Returns whether it
+// worked; any problem is reported on the terminal, never thrown.
+bool export_csv(const std::filesystem::path& tlog) {
+  const auto csv_path = mgs::csv_path_for(tlog);
+  if (csv_path == tlog) {  // "x.csv" would overwrite its own input
+    spdlog::error("{} already ends in .csv; give a .tlog", tlog.string());
+    return false;
+  }
+  std::ifstream in(tlog, std::ios::binary);
+  if (!in) {
+    spdlog::error("cannot read {}", tlog.string());
+    return false;
+  }
+  std::ofstream out(csv_path);
+  if (!out) {
+    spdlog::error("cannot write {}", csv_path.string());
+    return false;
+  }
+  const auto result = mgs::tlog_to_csv(in, out);
+  out.close();
+  if (!out) {
+    spdlog::error("writing {} failed", csv_path.string());
+    return false;
+  }
+  spdlog::info("wrote {} telemetry rows to {}", result.rows, csv_path.string());
+  if (result.skipped) {
+    spdlog::warn("skipped {} damaged frames in {}", result.skipped,
+                 tlog.string());
+  }
+  if (result.truncated) {
+    spdlog::warn("{} ends mid-record; the CSV covers the readable part",
+                 tlog.string());
+  }
+  return true;
+}
+
 // Extract the port from a "udp://host:port" string; fall back on any failure.
 std::uint16_t parse_port(const std::string& url, std::uint16_t fallback) {
   const auto colon = url.rfind(':');
@@ -125,7 +164,15 @@ int main(int argc, char** argv) {
   app.add_option("--mission", mission_path,
                  "YAML mission file to upload with the [u] key");
 
+  std::string to_csv;
+  app.add_option("--to-csv", to_csv,
+                 "Convert a .tlog to telemetry CSV (written beside it) and exit")
+      ->check(CLI::ExistingFile);
+
   CLI11_PARSE(app, argc, argv);
+
+  // Converter mode: no socket, no TUI — read one file, write one, done.
+  if (!to_csv.empty()) return export_csv(to_csv) ? 0 : 1;
 
   // Load and validate the mission now, before the TUI, so a typo in the YAML is
   // reported plainly and we exit — not discovered mid-flight on a keypress.
@@ -157,10 +204,12 @@ int main(int argc, char** argv) {
   // failure notice) is readable on the terminal. A failed open does not stop us
   // — logging is a passenger, never the pilot.
   std::unique_ptr<mgs::FlightLog> flight_log;
+  std::filesystem::path tlog_path;  // kept for the CSV export at shutdown
   if (!no_log) {
     flight_log = std::make_unique<mgs::FlightLog>(log_dir);
     if (flight_log->healthy()) {
-      spdlog::info("recording flight log to {}", flight_log->path().string());
+      tlog_path = flight_log->path();
+      spdlog::info("recording flight log to {}", tlog_path.string());
     } else {
       spdlog::warn("flight logging disabled: {}", flight_log->error());
     }
@@ -550,6 +599,10 @@ int main(int argc, char** argv) {
   if (!net_error.empty()) {
     spdlog::error("network link stopped: {}", net_error);
   }
+  // The network thread owned the log and closed it on exit, so the .tlog is
+  // complete on disk. The CSV is built from it here, off the hot loop; after a
+  // crash, run --to-csv on the .tlog instead.
+  if (!tlog_path.empty()) export_csv(tlog_path);
   spdlog::info("mavlink-gs shut down cleanly");
   return 0;
 }

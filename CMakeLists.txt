@@ -52,6 +52,8 @@ add_library(mavlink-gs-core
   src/map/geo.cpp
   src/map/trail.cpp
   src/log/flight_log.cpp
+  src/log/tlog_reader.cpp
+  src/log/csv_export.cpp
   src/state/vehicle_state.cpp
   src/ui/dashboard.cpp
   src/ui/map_panel.cpp
@@ -101,7 +103,8 @@ add_executable(mavlink-gs-tests
   tests/test_mission_uploader.cpp
   tests/test_mission_downloader.cpp
   tests/test_geo.cpp
-  tests/test_step_entry.cpp)
+  tests/test_step_entry.cpp
+  tests/test_csv_export.cpp)
 # Catch2WithMain provides Catch2's own main(), so tests need no main.cpp.
 target_link_libraries(mavlink-gs-tests PRIVATE
   mavlink-gs-core
